@@ -505,7 +505,7 @@ client.once('ready', () => {
   console.log('Esperando comando: !setup_community en canales o mediante el Dashboard Web.');
   
   // Iniciar el panel web cuando el bot esté listo
-  startDashboard(client, setupCommunity);
+  startDashboard(client, setupCommunity, applySmartRoles);
 });
 
 client.on('messageCreate', async (message) => {
@@ -584,4 +584,4 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
 
 client.login(process.env.DISCORD_TOKEN);
 
-module.exports = { client, setupCommunity };
+module.exports = { client, setupCommunity, applySmartRoles };

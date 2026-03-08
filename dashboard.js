@@ -5,7 +5,7 @@ const session = require('express-session');
 const axios = require('axios');
 const crypto = require('crypto');
 
-function startDashboard(discordClient, setupCommunityLogic) {
+function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
   const app = express();
   const PORT = process.env.PORT || 3000;
   
@@ -225,6 +225,9 @@ function startDashboard(discordClient, setupCommunityLogic) {
           } else {
               await member.roles.remove(role);
           }
+
+          // Trigger automated separator update
+          setTimeout(() => applySmartRoles(member), 500);
 
           res.json({ success: true });
       } catch (err) {

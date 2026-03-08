@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginView = document.getElementById('login-view');
     const dashView = document.getElementById('dashboard-view');
     const sidebar = document.querySelector('.sidebar');
+    const menuToggle = document.getElementById('menu-toggle');
     const logoutBtn = document.getElementById('logout-btn');
     const setupBtn = document.getElementById('setup-btn');
     const restartBtn = document.getElementById('restart-btn');
@@ -20,6 +21,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterBtns = document.querySelectorAll('.filter-btn');
     const navItems = document.querySelectorAll('.nav-item');
     const screens = document.querySelectorAll('.screen-view');
+
+    // --- Theme Management ---
+    function setTheme(themeName) {
+        localStorage.setItem('hacklab_theme', themeName);
+        document.body.setAttribute('data-theme', themeName);
+        console.log(`[Theme] Switched to ${themeName}`);
+    }
+
+    // Load persisted theme or default to dark
+    const savedTheme = localStorage.getItem('hacklab_theme') || 'dark';
+    setTheme(savedTheme);
 
     // --- Initialization ---
     checkSession();
@@ -38,6 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 s.classList.remove('active');
                 if (s.id === screenId) s.classList.add('active');
             });
+
+            // Auto-close sidebar on mobile after navigation
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('open');
+            }
 
             // Special Refresh Logics
             if (screenId === 'users-screen' || screenId === 'bots-screen') {
@@ -71,8 +88,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function showDashboard(user) {
         document.getElementById('sidebar-bot-avatar').src = user.avatar;
+        
+        // Use the CSS state class for a smooth transition
+        document.body.classList.add('is-authenticated');
+        
+        // Pre-revealing clean up
         loginView.classList.add('hidden');
-        sidebar.classList.remove('hidden');
         dashView.classList.remove('hidden');
         
         updateStats();
@@ -165,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </td>
             <td>
-                <button class="filter-btn" style="padding: 4px 10px; font-size: 0.7rem;" onclick="copyId('${u.id}')">Copiar ID</button>
+                <button class="btn-action-small" onclick="copyId('${u.id}')">Copiar ID</button>
             </td>
         `;
         table.appendChild(tr);
@@ -189,14 +210,20 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const dropdown = document.createElement('div');
         dropdown.className = 'role-add-dropdown';
-        dropdown.style.top = (event.pageY + 10) + 'px';
-        dropdown.style.left = (event.pageX - 100) + 'px';
+        
+        // Calculate position (avoid overflow)
+        const top = event.pageY + 10;
+        const left = Math.min(event.pageX - 100, window.innerWidth - 220);
+        
+        dropdown.style.top = top + 'px';
+        dropdown.style.left = left + 'px';
 
         available.forEach(r => {
             const opt = document.createElement('div');
             opt.className = 'role-option';
+            // Use role color as a left border indicator for better visibility
+            opt.style.borderLeft = `4px solid ${r.color || 'var(--text-muted)'}`;
             opt.textContent = r.name;
-            opt.style.color = r.color;
             opt.onclick = () => {
                 manageRole(userId, r.id, 'add');
                 dropdown.remove();
@@ -320,4 +347,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     logoutBtn.addEventListener('click', () => fetch('/api/logout', { method: 'POST' }).then(() => window.location.reload()));
+
+    // --- Mobile Sidebar Toggle ---
+    if (menuToggle) {
+        menuToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            sidebar.classList.toggle('open');
+        });
+    }
+
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', (e) => {
+        if (window.innerWidth <= 768 && sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target !== menuToggle) {
+            sidebar.classList.remove('open');
+        }
+    });
+
+    // Reset sidebar state on window resize
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 768) {
+            sidebar.classList.remove('open');
+        }
+    });
 });
