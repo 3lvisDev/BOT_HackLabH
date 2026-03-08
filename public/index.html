@@ -46,6 +46,10 @@
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
                 <span>Logs Sistema</span>
             </div>
+            <div class="nav-item" data-screen="settings-screen">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1V11a2 2 0 0 1-2-2 2 2 0 0 1 2-2v-.09A1.65 1.65 0 0 0 5 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H11a2 2 0 0 1 2 2 2 2 0 0 1-2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15z"></path></svg>
+                <span>Configuración</span>
+            </div>
         </nav>
 
         <div class="sidebar-footer">
@@ -181,6 +185,60 @@
                 </div>
                 <div class="terminal-box" id="terminal">
                     <pre id="log-content" class="log-content">Esperando eventos...</pre>
+                </div>
+            </section>
+
+            <!-- PESTAÑA 5: CONFIGURACIÓN -->
+            <section id="settings-screen" class="screen-view">
+                <div class="screen-header">
+                    <h2>Panel de <span>Configuración</span></h2>
+                    <p class="header-desc">Personaliza tu experiencia de usuario</p>
+                </div>
+
+                <div class="glass-panel settings-panel">
+                    <h3>Apariencia</h3>
+                    <p>Selecciona un tema visual para el panel administrativo.</p>
+                    
+                    <div class="theme-grid">
+                        <div class="theme-card active" data-theme-id="dark">
+                            <div class="theme-preview dark-preview">
+                                <div class="preview-circles">
+                                    <span style="background: #6366f1"></span>
+                                    <span style="background: #10b981"></span>
+                                </div>
+                            </div>
+                            <div class="theme-info">
+                                <span>Obsidian Dark</span>
+                                <small>Lujoso y Profesional</small>
+                            </div>
+                        </div>
+
+                        <div class="theme-card" data-theme-id="light">
+                            <div class="theme-preview light-preview">
+                                <div class="preview-circles">
+                                    <span style="background: #4f46e5"></span>
+                                    <span style="background: #10b981"></span>
+                                </div>
+                            </div>
+                            <div class="theme-info">
+                                <span>Crystal Light</span>
+                                <small>Limpio y Brillante</small>
+                            </div>
+                        </div>
+
+                        <div class="theme-card" data-theme-id="black">
+                            <div class="theme-preview black-preview">
+                                <div class="preview-circles">
+                                    <span style="background: #8b5cf6"></span>
+                                    <span style="background: #f43f5e"></span>
+                                </div>
+                            </div>
+                            <div class="theme-info">
+                                <span>Midnight Black</span>
+                                <small>Minimalismo OLED</small>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </div>

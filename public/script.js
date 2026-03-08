@@ -23,20 +23,38 @@ document.addEventListener('DOMContentLoaded', () => {
     const screens = document.querySelectorAll('.screen-view');
 
     // --- Theme Management ---
-    function setTheme(themeName) {
-        localStorage.setItem('hacklab_theme', themeName);
-        document.body.setAttribute('data-theme', themeName);
-        console.log(`[Theme] Switched to ${themeName}`);
+    function setTheme(themeId) {
+        // Apply theme attribute to document (on html element)
+        if (themeId === 'dark') {
+            document.documentElement.removeAttribute('data-theme');
+        } else {
+            document.documentElement.setAttribute('data-theme', themeId);
+        }
+
+        // Save to localStorage
+        localStorage.setItem('hacklab-theme', themeId);
+
+        // Update UI Cards in Settings if they exist
+        const themeCards = document.querySelectorAll('.theme-card');
+        themeCards.forEach(card => {
+            if (card.dataset.themeId === themeId) {
+                card.classList.add('active');
+            } else {
+                card.classList.remove('active');
+            }
+        });
+
+        console.log(`[Theme] Switched to: ${themeId}`);
     }
 
     // Load persisted theme or default to dark
-    const savedTheme = localStorage.getItem('hacklab_theme') || 'dark';
+    const savedTheme = localStorage.getItem('hacklab-theme') || 'dark';
     setTheme(savedTheme);
 
     // --- Initialization ---
     checkSession();
 
-    // --- Navigation & Tab Switching ---
+    // Screen Switching Logic
     navItems.forEach(item => {
         item.addEventListener('click', () => {
             const screenId = item.getAttribute('data-screen');
@@ -363,7 +381,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Reset sidebar state on window resize
+    // Theme Card Event Listeners
+    document.querySelectorAll('.theme-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const themeId = card.dataset.themeId;
+            setTheme(themeId);
+        });
+    });
+
+    // Mobile Navigation (Close on click)
+    if (window.innerWidth < 768) {
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                sidebar.classList.remove('active');
+            });
+        });
+    }
+
+    console.log('✅ Dashboard initialized successfully');
     window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {
             sidebar.classList.remove('open');
