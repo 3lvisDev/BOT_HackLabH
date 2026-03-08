@@ -1,302 +1,323 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // --- State & Constants ---
+    let allUsers = [];
+    let allRoles = [];
+    let selectedAdmins = [];
+    let selectedMods = [];
+    let currentFilter = 'all';
+
+    // --- DOM Elements ---
     const loginView = document.getElementById('login-view');
     const dashView = document.getElementById('dashboard-view');
+    const sidebar = document.querySelector('.sidebar');
     const logoutBtn = document.getElementById('logout-btn');
     const setupBtn = document.getElementById('setup-btn');
     const restartBtn = document.getElementById('restart-btn');
     const reconnectOverlay = document.getElementById('reconnect-overlay');
     const logContent = document.getElementById('log-content');
-    const userSearchAdmin = document.getElementById('user-search-admin');
-    const userDropdownAdmin = document.getElementById('user-dropdown-admin');
-    const selectedAdminsGrid = document.getElementById('selected-admins');
+    const userTableBody = document.getElementById('user-table-body');
+    const botTableBody = document.getElementById('bot-table-body');
+    const filterBtns = document.querySelectorAll('.filter-btn');
+    const navItems = document.querySelectorAll('.nav-item');
+    const screens = document.querySelectorAll('.screen-view');
 
-    const userSearchMod = document.getElementById('user-search-mod');
-    const userDropdownMod = document.getElementById('user-dropdown-mod');
-    const selectedModsGrid = document.getElementById('selected-mods');
-
-    let allUsers = [];
-    let selectedAdmins = [];
-    let selectedMods = [];
-
-    // Validar sesión al cargar
+    // --- Initialization ---
     checkSession();
 
-    logoutBtn.addEventListener('click', async () => {
-        try {
-            await fetch('/api/logout', { method: 'POST' });
-        } catch (e) {}
+    // --- Navigation & Tab Switching ---
+    navItems.forEach(item => {
+        item.addEventListener('click', () => {
+            const screenId = item.getAttribute('data-screen');
+            
+            // UI Toggle Nav
+            navItems.forEach(n => n.classList.remove('active'));
+            item.classList.add('active');
 
-        dashView.classList.remove('active');
-        dashView.classList.add('hidden');
-        setTimeout(() => {
-            loginView.classList.remove('hidden');
-            loginView.classList.add('active');
-        }, 500);
-    });
-
-    setupBtn.addEventListener('click', async () => {
-        if (!confirm('¿Estás seguro de que quieres ejecutar el Setup Automático? Esto ajustará roles y canales en el servidor.')) return;
-        
-        setupBtn.disabled = true;
-        setupBtn.innerHTML = '<span>Ejecutando...</span>';
-        logContent.innerHTML = 'Iniciando conexión con el servidor...\n';
-
-        try {
-            const extraAdmins = selectedAdmins.map(u => u.id).join(',');
-            const extraMods = selectedMods.map(u => u.id).join(',');
-
-            const response = await fetch('/api/setup', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-admins': extraAdmins,
-                    'x-mods': extraMods
-                }
+            // Switch Screen
+            screens.forEach(s => {
+                s.classList.remove('active');
+                if (s.id === screenId) s.classList.add('active');
             });
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n');
-                
-                lines.forEach(line => {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.substring(6));
-                            if (data.message) {
-                                let color = "#10b981"; // green default
-                                if (data.message.includes("❌")) color = "#ef4444";
-                                else if (data.message.includes("⚙️")) color = "#3b82f6";
-                                
-                                logContent.innerHTML += `<span style="color:${color}">${data.message}</span>\n`;
-                                logContent.scrollTop = logContent.scrollHeight;
-                            }
-                        } catch (e) {}
-                    }
-                });
+            // Special Refresh Logics
+            if (screenId === 'users-screen' || screenId === 'bots-screen') {
+                refreshData();
             }
-        } catch (error) {
-            logContent.innerHTML += `\n<span style="color:#ef4444">Error de conexión: ${error.message}</span>\n`;
-        }
-
-        setupBtn.disabled = false;
-        setupBtn.innerHTML = '<span>Re-ejecutar Configuración Automática</span>';
+        });
     });
 
-    restartBtn.addEventListener('click', async () => {
-        if (!confirm('Reinicio del bot: El panel se desconectará temporalmente. ¿Continuar?')) return;
-        
-        try {
-            await fetch('/api/restart', { method: 'POST' });
-        } catch (e) {}
-        
-        reconnectOverlay.classList.remove('hidden');
-        pollForReconnection();
+    // --- Filters ---
+    filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            filterBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentFilter = btn.getAttribute('data-filter');
+            renderUserTable();
+        });
     });
 
-    async function pollForReconnection() {
-        // Hacemos polling cada 3 segundos hasta que el backend reviva
-        setInterval(async () => {
-            try {
-                const res = await fetch('/api/status', {
-                   headers: { 'Cache-Control': 'no-cache' } 
-                });
-                if (res.ok) {
-                    window.location.reload(); // Recargar página entera al reconectar
-                }
-            } catch (err) {
-                // Sigue intentando si falla la conexión (normal durante reinicio)
-            }
-        }, 3000);
-    }
-
+    // --- Core Functions ---
     async function checkSession() {
         try {
             const resMe = await fetch('/api/auth/me');
-            
             if (resMe.ok) {
                 const dataMe = await resMe.json();
-                
                 if (dataMe.authenticated) {
-                    // Update UI User
-                    document.getElementById('bot-name').textContent = dataMe.user.username;
-                    document.getElementById('bot-avatar').src = dataMe.user.avatar;
-                    
-                    // Call Status to get stats
-                    const resStatus = await fetch('/api/status');
-                    if (resStatus.ok) {
-                        const statusData = await resStatus.json();
-                        document.getElementById('stat-guilds').textContent = statusData.guildCount;
-                        document.getElementById('stat-users').textContent = statusData.userCount;
-                    }
-
-                    // Transitions
-                    loginView.classList.remove('active');
-                    loginView.classList.add('hidden');
-                    setTimeout(async () => {
-                        loginView.style.display = 'none';
-                        dashView.classList.remove('hidden');
-                        dashView.style.display = 'block';
-                        dashView.classList.add('active');
-                        await loadUsers();
-                    }, 500);
-                }
-            } else {
-                // Si viene rebotado de Discord Login y no es admin
-                const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.get('error')) {
-                    const errDiv = document.getElementById('login-error');
-                    if(errDiv) errDiv.textContent = 'Acceso Denegado: No tienes rol de administrador.';
+                    showDashboard(dataMe.user);
                 }
             }
-        } catch (err) {
-            console.error('Bot offline o error de red: ', err);
-        }
+        } catch (err) { console.error('Error validating session', err); }
     }
 
-    async function loadUsers() {
+    async function showDashboard(user) {
+        document.getElementById('sidebar-bot-avatar').src = user.avatar;
+        loginView.classList.add('hidden');
+        sidebar.classList.remove('hidden');
+        dashView.classList.remove('hidden');
+        
+        updateStats();
+        await loadInitialData();
+    }
+
+    async function loadInitialData() {
         try {
-            const res = await fetch('/api/users');
-            if (res.ok) {
-                allUsers = await res.json();
-            }
-        } catch (err) {
-            console.error("Error loading users", err);
+            const [usersRes, rolesRes] = await Promise.all([
+                fetch('/api/users'),
+                fetch('/api/roles')
+            ]);
+            
+            if (usersRes.ok) allUsers = await usersRes.json();
+            if (rolesRes.ok) allRoles = await rolesRes.json();
+            
+            renderUserTable();
+            renderBotTable();
+            setupSearchInputs();
+        } catch (err) { console.error("Error fetching data", err); }
+    }
+
+    async function refreshData() {
+        const usersRes = await fetch('/api/users');
+        if (usersRes.ok) {
+            allUsers = await usersRes.json();
+            renderUserTable();
+            renderBotTable();
         }
     }
 
-    // --- Buscador Genérico ---
-    function setupUserSearch(searchInput, dropdownEl, onSelect) {
-        searchInput.addEventListener('input', (e) => {
-            const val = e.target.value.toLowerCase();
-            dropdownEl.innerHTML = '';
-            if (!val) {
-                dropdownEl.classList.add('hidden');
-                return;
+    async function updateStats() {
+        try {
+            const res = await fetch('/api/status');
+            if (res.ok) {
+                const data = await res.json();
+                document.getElementById('stat-guilds').textContent = data.guildCount;
+                document.getElementById('stat-users').textContent = data.userCount;
             }
+        } catch (err) {}
+    }
 
-            const filtered = allUsers.filter(u => 
-                u.username.toLowerCase().includes(val) || 
-                (u.displayName && u.displayName.toLowerCase().includes(val))
-            ).slice(0, 10);
+    // --- Rendering Logic ---
+    function renderUserTable() {
+        if (!userTableBody) return;
+        userTableBody.innerHTML = '';
+        
+        // Filter out bots and applied category filter
+        const filtered = allUsers.filter(u => {
+            if (u.isBot) return false;
+            if (currentFilter === 'all') return true;
+            if (currentFilter === 'admins') return u.isAdmin;
+            if (currentFilter === 'mods') return u.roles.some(r => r.name.toLowerCase().includes('mod'));
+            if (currentFilter === 'normal') return !u.isAdmin && !u.roles.some(r => r.name.toLowerCase().includes('mod'));
+            return true;
+        });
 
-            if (filtered.length === 0) {
-                dropdownEl.classList.add('hidden');
-                return;
-            }
+        filtered.forEach(u => appendUserRow(userTableBody, u));
+    }
 
-            filtered.forEach(u => {
-                const div = document.createElement('div');
-                div.className = 'user-dropdown-item';
-                div.innerHTML = `
-                    <img src="${u.avatarUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'}" alt="avatar">
-                    <div class="user-names">
-                        <span class="display-name">${u.displayName || u.username}</span>
-                        <span class="username">@${u.username}</span>
-                    </div>
-                `;
-                div.addEventListener('click', () => {
-                    onSelect(u);
-                    searchInput.value = '';
-                    dropdownEl.classList.add('hidden');
-                });
-                dropdownEl.appendChild(div);
+    function renderBotTable() {
+        if (!botTableBody) return;
+        botTableBody.innerHTML = '';
+        const bots = allUsers.filter(u => u.isBot);
+        bots.forEach(b => appendUserRow(botTableBody, b));
+    }
+
+    function appendUserRow(table, u) {
+        const tr = document.createElement('tr');
+        
+        const rolesHtml = u.roles.map(r => `
+            <span class="role-badge" style="border-color: ${r.color}44; color: ${r.color}">
+                ${r.name}
+                <span class="btn-remove-role" onclick="manageRole('${u.id}', '${r.id}', 'remove')">&times;</span>
+            </span>
+        `).join('');
+
+        tr.innerHTML = `
+            <td class="user-cell">
+                <img src="${u.avatarUrl}" class="user-avatar">
+                <div class="user-info">
+                    <span class="display-name">${u.displayName}</span>
+                    <span class="user-tag">@${u.username}</span>
+                </div>
+            </td>
+            <td>
+                <div class="role-tags">
+                    ${rolesHtml}
+                    <button class="btn-add-role" onclick="showRoleAdd(event, '${u.id}')">+ Añadir</button>
+                </div>
+            </td>
+            <td>
+                <button class="filter-btn" style="padding: 4px 10px; font-size: 0.7rem;" onclick="copyId('${u.id}')">Copiar ID</button>
+            </td>
+        `;
+        table.appendChild(tr);
+    }
+
+    window.manageRole = async (userId, roleId, action) => {
+        try {
+            const res = await fetch(`/api/users/${userId}/roles`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roleId, action })
             });
+            if (res.ok) refreshData();
+        } catch (err) { console.error("Error managing role", err); }
+    };
 
-            dropdownEl.classList.remove('hidden');
+    window.showRoleAdd = (event, userId) => {
+        const user = allUsers.find(u => u.id === userId);
+        const existingRolesIds = user.roles.map(r => r.id);
+        const available = allRoles.filter(r => !existingRolesIds.includes(r.id));
+        
+        const dropdown = document.createElement('div');
+        dropdown.className = 'role-add-dropdown';
+        dropdown.style.top = (event.pageY + 10) + 'px';
+        dropdown.style.left = (event.pageX - 100) + 'px';
+
+        available.forEach(r => {
+            const opt = document.createElement('div');
+            opt.className = 'role-option';
+            opt.textContent = r.name;
+            opt.style.color = r.color;
+            opt.onclick = () => {
+                manageRole(userId, r.id, 'add');
+                dropdown.remove();
+            };
+            dropdown.appendChild(opt);
+        });
+
+        if (available.length === 0) {
+            const opt = document.createElement('div');
+            opt.className = 'role-option';
+            opt.textContent = "Sin roles extra";
+            dropdown.appendChild(opt);
+        }
+
+        document.body.appendChild(dropdown);
+        const close = () => { dropdown.remove(); document.removeEventListener('click', close); };
+        setTimeout(() => document.addEventListener('click', close), 10);
+    };
+
+    window.copyId = (id) => {
+        navigator.clipboard.writeText(id).then(() => {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = 'Copiado!';
+            btn.style.borderColor = '#10b981';
+            setTimeout(() => { btn.textContent = originalText; btn.style.borderColor = ''; }, 2000);
+        });
+    };
+
+    // --- Search & Setup Logic ---
+    function setupSearchInputs() {
+        setupUserSearch(document.getElementById('user-search-admin'), document.getElementById('user-dropdown-admin'), (u) => {
+            if (selectedAdmins.length < 3 && !selectedAdmins.find(x => x.id === u.id)) {
+                selectedAdmins.push(u);
+                renderChips('selected-admins', selectedAdmins, (id) => {
+                    selectedAdmins = selectedAdmins.filter(x => x.id !== id);
+                });
+            }
+        });
+        setupUserSearch(document.getElementById('user-search-mod'), document.getElementById('user-dropdown-mod'), (u) => {
+            if (selectedMods.length < 3 && !selectedMods.find(x => x.id === u.id)) {
+                selectedMods.push(u);
+                renderChips('selected-mods', selectedMods, (id) => {
+                    selectedMods = selectedMods.filter(x => x.id !== id);
+                });
+            }
         });
     }
 
-    setupUserSearch(userSearchAdmin, userDropdownAdmin, addUserAdmin);
-    setupUserSearch(userSearchMod, userDropdownMod, addUserMod);
+    function setupUserSearch(input, dropdown, onSelect) {
+        if (!input) return;
+        input.addEventListener('input', (e) => {
+            const val = e.target.value.toLowerCase();
+            dropdown.innerHTML = '';
+            if (!val) return dropdown.classList.add('hidden');
 
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.search-input-wrapper')) {
-            userDropdownAdmin.classList.add('hidden');
-            userDropdownMod.classList.add('hidden');
+            const filtered = allUsers.filter(u => !u.isBot && (u.username.toLowerCase().includes(val) || u.displayName.toLowerCase().includes(val))).slice(0, 5);
+            filtered.forEach(u => {
+                const d = document.createElement('div');
+                d.className = 'user-dropdown-item';
+                d.innerHTML = `<img src="${u.avatarUrl}"><span>${u.displayName}</span>`;
+                d.onclick = () => { onSelect(u); input.value = ''; dropdown.classList.add('hidden'); };
+                dropdown.appendChild(d);
+            });
+            dropdown.classList.remove('hidden');
+        });
+    }
+
+    function renderChips(containerId, list, onRemove) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = '';
+        list.forEach(u => {
+            const chip = document.createElement('div');
+            chip.className = 'user-chip';
+            chip.innerHTML = `<img src="${u.avatarUrl}"><span>${u.displayName}</span><span style="cursor:pointer" onclick="this.parentElement.remove(); window.triggerRemove('${containerId}', '${u.id}')">&times;</span>`;
+            container.appendChild(chip);
+        });
+    }
+
+    window.triggerRemove = (cid, uid) => {
+        if (cid === 'selected-admins') selectedAdmins = selectedAdmins.filter(u => u.id !== uid);
+        else selectedMods = selectedMods.filter(u => u.id !== uid);
+    };
+
+    setupBtn.addEventListener('click', async () => {
+        if (!confirm('¿Ejecutar configuración avanzada?')) return;
+        setupBtn.disabled = true;
+        logContent.innerHTML = '⚙️ Iniciando migración...\n';
+        try {
+            const response = await fetch('/api/setup', {
+                method: 'POST',
+                headers: { 'x-admins': selectedAdmins.map(u => u.id).join(','), 'x-mods': selectedMods.map(u => u.id).join(',') }
+            });
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                decoder.decode(value).split('\n').forEach(line => {
+                    if (line.startsWith('data: ')) {
+                        const data = JSON.parse(line.substring(6));
+                        if (data.message) {
+                            logContent.innerHTML += `${data.message}\n`;
+                            logContent.scrollTop = logContent.scrollHeight;
+                        }
+                    }
+                });
+            }
+        } catch (err) { logContent.innerHTML += `❌ Error: ${err.message}\n`; }
+        setupBtn.disabled = false;
+    });
+
+    restartBtn.addEventListener('click', async () => {
+        if (confirm('¿Reiniciar bot?')) {
+            fetch('/api/restart', { method: 'POST' });
+            reconnectOverlay.classList.remove('hidden');
+            setInterval(async () => {
+                try { if ((await fetch('/api/status')).ok) window.location.reload(); } catch (e) {}
+            }, 3000);
         }
     });
 
-    // --- Lógica Administradores ---
-    function addUserAdmin(user) {
-        if (selectedAdmins.length >= 3) {
-            alert('Solo puedes seleccionar hasta 3 administradores.');
-            return;
-        }
-        if (selectedAdmins.find(u => u.id === user.id)) return;
-        selectedAdmins.push(user);
-        renderSelectedAdmins();
-    }
-
-    function removeUserAdmin(userId) {
-        selectedAdmins = selectedAdmins.filter(u => u.id !== userId);
-        renderSelectedAdmins();
-    }
-    window.removeAdminChip = removeUserAdmin;
-
-    function renderSelectedAdmins() {
-        selectedAdminsGrid.innerHTML = '';
-        selectedAdmins.forEach(u => {
-            const chip = document.createElement('div');
-            chip.className = 'user-chip';
-            chip.innerHTML = `
-                <img src="${u.avatarUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'}" alt="avatar">
-                <span>${u.displayName || u.username}</span>
-                <span class="remove-btn" onclick="removeAdminChip('${u.id}')">&times;</span>
-            `;
-            selectedAdminsGrid.appendChild(chip);
-        });
-        
-        if (selectedAdmins.length >= 3) {
-            userSearchAdmin.placeholder = "Límite alcanzado";
-            userSearchAdmin.disabled = true;
-        } else {
-            userSearchAdmin.placeholder = "🔍 Buscar administrador...";
-            userSearchAdmin.disabled = false;
-        }
-    }
-
-    // --- Lógica Moderadores ---
-    function addUserMod(user) {
-        if (selectedMods.length >= 3) {
-            alert('Solo puedes seleccionar hasta 3 moderadores.');
-            return;
-        }
-        if (selectedMods.find(u => u.id === user.id)) return;
-        selectedMods.push(user);
-        renderSelectedMods();
-    }
-
-    function removeUserMod(userId) {
-        selectedMods = selectedMods.filter(u => u.id !== userId);
-        renderSelectedMods();
-    }
-    window.removeModChip = removeUserMod;
-
-    function renderSelectedMods() {
-        selectedModsGrid.innerHTML = '';
-        selectedMods.forEach(u => {
-            const chip = document.createElement('div');
-            chip.className = 'user-chip';
-            chip.innerHTML = `
-                <img src="${u.avatarUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'}" alt="avatar">
-                <span>${u.displayName || u.username}</span>
-                <span class="remove-btn" onclick="removeModChip('${u.id}')">&times;</span>
-            `;
-            selectedModsGrid.appendChild(chip);
-        });
-        
-        if (selectedMods.length >= 3) {
-            userSearchMod.placeholder = "Límite alcanzado";
-            userSearchMod.disabled = true;
-        } else {
-            userSearchMod.placeholder = "🔍 Buscar moderador...";
-            userSearchMod.disabled = false;
-        }
-    }
+    logoutBtn.addEventListener('click', () => fetch('/api/logout', { method: 'POST' }).then(() => window.location.reload()));
 });

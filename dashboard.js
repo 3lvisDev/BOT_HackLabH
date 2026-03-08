@@ -152,22 +152,53 @@ function startDashboard(discordClient, setupCommunityLogic) {
     });
   });
 
-  // Endpoint para obtener usuarios (para el buscador del frontend)
+  // Endpoint para obtener todos los ROLES del servidor (ignorando @everyone y roles de bots)
+  app.get('/api/roles', authMiddleware, async (req, res) => {
+    try {
+        const targetGuild = discordClient.guilds.cache.first();
+        if (!targetGuild) return res.json([]);
+
+        const roles = targetGuild.roles.cache
+            .filter(r => {
+                const isSeparator = r.name.includes("━━") || r.name.includes("══") || r.name.includes("---");
+                return r.name !== '@everyone' && !r.managed && !isSeparator;
+            })
+            .sort((a, b) => b.position - a.position)
+            .map(r => ({
+                id: r.id,
+                name: r.name,
+                color: r.hexColor,
+                position: r.position
+            }));
+        
+        res.json(roles);
+    } catch (err) {
+        res.status(500).json({ error: 'Error obteniendo roles' });
+    }
+  });
+
+  // Endpoint para obtener usuarios DETALLADOS (incluyendo sus roles)
   app.get('/api/users', authMiddleware, async (req, res) => {
     try {
       const targetGuild = discordClient.guilds.cache.first();
-      if (!targetGuild) {
-        return res.json([]);
-      }
+      if (!targetGuild) return res.json([]);
 
-      // Ensure members are cached by fetching them
       const members = await targetGuild.members.fetch();
       
       const usersList = members.map(m => ({
         id: m.user.id,
         username: m.user.username,
         displayName: m.displayName,
-        avatarUrl: m.user.displayAvatarURL({ size: 64 })
+        avatarUrl: m.user.displayAvatarURL({ size: 64 }),
+        roles: m.roles.cache
+            .filter(r => {
+                const isSeparator = r.name.includes("━━") || r.name.includes("══") || r.name.includes("---");
+                return r.name !== '@everyone' && !isSeparator;
+            })
+            .map(r => ({ id: r.id, name: r.name, color: r.hexColor })),
+        joinedAt: m.joinedAt,
+        isAdmin: m.permissions.has('Administrator'),
+        isBot: m.user.bot
       }));
 
       res.json(usersList);
@@ -175,6 +206,31 @@ function startDashboard(discordClient, setupCommunityLogic) {
       console.error("Error obteniendo usuarios:", err);
       res.status(500).json({ error: 'Error interno obteniendo usuarios' });
     }
+  });
+
+  // Endpoint para GESTIONAR ROLES de un usuario específico
+  app.post('/api/users/:userId/roles', authMiddleware, async (req, res) => {
+      const { userId } = req.params;
+      const { roleId, action } = req.body; // action: 'add' o 'remove'
+      
+      try {
+          const targetGuild = discordClient.guilds.cache.first();
+          const member = await targetGuild.members.fetch(userId);
+          const role = targetGuild.roles.cache.get(roleId);
+
+          if (!member || !role) return res.status(404).json({ error: 'Miembro o Rol no encontrado' });
+
+          if (action === 'add') {
+              await member.roles.add(role);
+          } else {
+              await member.roles.remove(role);
+          }
+
+          res.json({ success: true });
+      } catch (err) {
+          console.error("Error gestionando rol:", err);
+          res.status(500).json({ error: err.message });
+      }
   });
 
   // Endpoint para ejecutar el Setup de la Comunidad
