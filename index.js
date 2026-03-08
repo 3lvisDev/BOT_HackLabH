@@ -56,6 +56,13 @@ async function applySmartRoles(member) {
         // 3. Filtrar de la lista actual todos los separadores que YA NO necesita
         // y asegurar que incluya los que SÍ necesita
         let finalRoleIds = currentRoleIds.filter(id => !activeSeparators.has(id));
+        
+        // ASEGURAR RANGO USUARIO si está en la DB
+        const config = await getGuildConfig(guild.id);
+        if (config && config.base_role_id && !finalRoleIds.includes(config.base_role_id)) {
+            finalRoleIds.push(config.base_role_id);
+        }
+
         for (const sepId of desiredSeparators) {
             finalRoleIds.push(sepId);
         }
@@ -84,6 +91,9 @@ async function setupCommunity(guild, logger = console.log, adminUserIds = [], mo
 
     logger("⚙️ Iniciando configuración de la comunidad de programación...");
 
+    const botHighestRole = botMember.roles.highest;
+    logger(`⚙️ Mi rol más alto es: '${botHighestRole.name}' (Posición: ${botHighestRole.position})`);
+
     logger("⚙️ Evaluando estructura actual de roles...");
     
     // Traer todos los roles ordenados por posición
@@ -93,13 +103,23 @@ async function setupCommunity(guild, logger = console.log, adminUserIds = [], mo
     const adminRoles = allRoles.filter(role => role.permissions.has(PermissionsBitField.Flags.Administrator));
     
     // Buscar un rol base: 
-    // 1. Intentar por nombres comunes primero
+    // 1. Intentar por nombres comunes primero (búsqueda más estricta para evitar separadores)
     const commonBaseNames = ['usuario', 'miembro', 'member', 'programador', 'dev', 'verificado'];
-    let baseRole = allRoles.find(role => {
+    const candidates = allRoles.filter(role => {
         if (role.name === '@everyone' || role.managed) return false;
+        // Evitar roles que parezcan separadores
+        if (role.name.includes("━━") || role.name.includes("══") || role.name.includes("---")) return false;
+        
         const nameMatch = commonBaseNames.some(n => role.name.toLowerCase().includes(n));
         return nameMatch && !role.permissions.has(PermissionsBitField.Flags.Administrator);
     });
+
+    // Tomamos el candidato con el ID más bajo (suele ser el más antiguo/base) o el primero si no hay criterio
+    let baseRole = candidates.at(-1); 
+
+    if (baseRole) {
+        logger(`⚙️ Rol base identificado por nombre: '${baseRole.name}'`);
+    }
 
     // 2. Si no hay por nombre, buscar el que tenga permisos básicos de ver/hablar
     if (!baseRole) {
@@ -175,6 +195,10 @@ async function setupCommunity(guild, logger = console.log, adminUserIds = [], mo
       });
     } else {
         logger(`⚙️ Rol de Moderación detectado y usado: '${explicitModRole.name}'`);
+    }
+
+    if (botHighestRole.position <= baseRole.position) {
+        logger(`⚠️ ¡ALERTA! Mi rol '${botHighestRole.name}' está igual o por debajo del rol base '${baseRole.name}'. NO podré asignar roles a los usuarios hasta que subas mi rol en los Ajustes del Servidor.`);
     }
 
     // Guardar en la base de datos la configuración
@@ -320,15 +344,21 @@ async function setupCommunity(guild, logger = console.log, adminUserIds = [], mo
         const currentClean = originalRoleIds.filter(id => id !== guild.id).sort();
         const targetClean = [...targetRolesList].sort();
 
+        // LOG DE DEPURACIÓN PROFUNDO
+        if (processedCount <= 10 || currentClean.join(',') !== targetClean.join(',')) {
+            console.log(`[DEBUG] Member: ${member.user.tag} | Current: [${currentClean.join(',')}] | Target: [${targetClean.join(',')}]`);
+        }
+
         // Si la lista de roles "limpios" es diferente, o si el usuario no tiene roles y debería tener el base
         if (currentClean.join(',') !== targetClean.join(',')) {
             try {
                 // Discord ignora @everyone en .set(), así que pasamos solo el targetClean
                 await member.roles.set(targetClean);
                 rolesChanged = true;
-                console.log(`[Setup] roles.set aplicado a ${member.user.tag}: [${targetClean.join(', ')}]`);
+                console.log(`[Setup] Confirmed Update for ${member.user.tag}`);
             } catch(err) {
-                console.log(`No se pudo actualizar roles de ${member.user.tag}: ${err.message}`);
+                console.log(`[ERROR] No se pudo actualizar roles de ${member.user.tag}: ${err.message}`);
+                logger(`   ❌ Error en ${member.user.tag}: ${err.message}`);
             }
         }
 
