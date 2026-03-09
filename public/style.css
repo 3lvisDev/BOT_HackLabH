@@ -239,16 +239,28 @@ body.is-authenticated .login-wrapper {
 .sidebar-title span { color: var(--primary); text-shadow: 0 0 20px var(--primary-glow); }
 
 .sidebar-nav { flex: 1; }
+/* Navigation & Sidebar Category Labels */
+.nav-label {
+    padding: 24px 20px 8px;
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
 .nav-item {
+    padding: 12px 20px;
+    margin: 4px 12px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 14px 18px;
-    border-radius: 16px;
+    gap: 15px;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
-    margin-bottom: 10px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
     font-weight: 600;
     font-size: 0.95rem;
 }
@@ -726,6 +738,92 @@ body.is-authenticated .mobile-header {
 .theme-info span { font-weight: 700; font-size: 1rem; color: var(--text-primary); }
 .theme-info small { font-size: 0.8rem; color: var(--text-secondary); opacity: 0.7; }
 
+/* --- Module System (Essentials) --- */
+.modules-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 1.5rem;
+    margin-top: 20px;
+}
+
+.module-card {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.module-card-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.module-icon {
+    width: 48px;
+    height: 48px;
+    background: var(--primary-glow);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary);
+}
+
+.module-title h3 { font-size: 1.1rem; font-family: var(--font-heading); }
+.module-title p { font-size: 0.85rem; color: var(--text-secondary); }
+
+/* Premium Toggle Switch */
+.premium-toggle {
+    margin-left: auto;
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+}
+
+.premium-toggle input { opacity: 0; width: 0; height: 0; }
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: var(--border-main);
+    transition: 0.4s;
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider { background-color: var(--primary); }
+input:checked + .slider:before { transform: translateX(20px); }
+
+.module-body { display: flex; flex-direction: column; gap: 15px; }
+
+.input-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block; }
+
+.save-bar {
+    margin-top: 30px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Fix for light theme dropdowns visibility */
+[data-theme="light"] select option {
+    background-color: white;
+    color: #0f172a;
+}
+
 /* Staggered Animations */
 .nav-item:nth-child(1) { animation-delay: 0.1s; }
 .nav-item:nth-child(2) { animation-delay: 0.15s; }
@@ -736,3 +834,136 @@ body.is-authenticated .mobile-header {
 .stat-card:nth-child(1) { animation: premiumFade 0.8s 0.2s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .stat-card:nth-child(2) { animation: premiumFade 0.8s 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .stat-card:nth-child(3) { animation: premiumFade 0.8s 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* --- Achievements System --- */
+.announcement-card {
+    padding: 40px;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.05));
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 24px;
+    margin-bottom: 30px;
+    position: relative;
+    overflow: hidden;
+    animation: premiumFade 0.8s ease-out;
+}
+
+.announcement-card::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, var(--primary-glow) 0%, transparent 70%);
+    opacity: 0.5;
+    z-index: 0;
+}
+
+.badge-new {
+    display: inline-block;
+    padding: 6px 12px;
+    background: var(--primary);
+    color: white;
+    font-weight: 800;
+    font-size: 0.75rem;
+    border-radius: 50px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 15px var(--primary-glow);
+    position: relative;
+    z-index: 1;
+}
+
+.premium-title {
+    font-size: 2.8rem;
+    font-weight: 900;
+    font-family: var(--font-heading);
+    margin-bottom: 12px;
+    letter-spacing: -0.02em;
+    position: relative;
+    z-index: 1;
+    color: var(--text-primary);
+}
+
+.premium-subtitle {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    max-width: 600px;
+    line-height: 1.6;
+    margin-bottom: 30px;
+    position: relative;
+    z-index: 1;
+}
+
+.premium-list {
+    list-style: none;
+    margin: 20px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: relative;
+    z-index: 1;
+}
+
+.premium-list li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.premium-list li span {
+    color: var(--primary);
+    font-weight: 900;
+    font-size: 1.4rem;
+}
+
+.announcement-footer {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-main);
+    position: relative;
+    z-index: 1;
+}
+
+/* Achievement Badges */
+.achievement-badge {
+    text-align: center;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    padding: 20px;
+}
+
+.achievement-badge:hover { transform: translateY(-5px) scale(1.05); }
+
+.badge-icon-wrapper {
+    width: 90px;
+    height: 90px;
+    margin: 0 auto 15px;
+    background: var(--bg-card);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--border-main);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    position: relative;
+    transition: all 0.3s;
+    font-size: 2.5rem;
+}
+
+.achievement-badge.locked .badge-icon-wrapper {
+    filter: grayscale(1);
+    opacity: 0.3;
+}
+
+.achievement-badge.unlocked .badge-icon-wrapper {
+    border-color: var(--primary);
+    background: radial-gradient(circle, var(--primary-glow) 0%, var(--bg-card) 100%);
+    box-shadow: 0 0 25px var(--primary-glow);
+}
+
+.badge-name { font-weight: 700; display: block; margin-bottom: 4px; color: var(--text-primary); }
+.badge-desc { font-size: 0.75rem; color: var(--text-muted); }
