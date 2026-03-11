@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedAdmins = [];
     let selectedMods = [];
     let currentFilter = 'all';
+    let currentUser = null;
 
     // --- DOM Elements ---
     const loginView = document.getElementById('login-view');
@@ -23,20 +24,38 @@ document.addEventListener('DOMContentLoaded', () => {
     const screens = document.querySelectorAll('.screen-view');
 
     // --- Theme Management ---
-    function setTheme(themeName) {
-        localStorage.setItem('hacklab_theme', themeName);
-        document.body.setAttribute('data-theme', themeName);
-        console.log(`[Theme] Switched to ${themeName}`);
+    function setTheme(themeId) {
+        // Apply theme attribute to document (on html element)
+        if (themeId === 'dark') {
+            document.documentElement.removeAttribute('data-theme');
+        } else {
+            document.documentElement.setAttribute('data-theme', themeId);
+        }
+
+        // Save to localStorage
+        localStorage.setItem('hacklab-theme', themeId);
+
+        // Update UI Cards in Settings if they exist
+        const themeCards = document.querySelectorAll('.theme-card');
+        themeCards.forEach(card => {
+            if (card.dataset.themeId === themeId) {
+                card.classList.add('active');
+            } else {
+                card.classList.remove('active');
+            }
+        });
+
+        console.log(`[Theme] Switched to: ${themeId}`);
     }
 
     // Load persisted theme or default to dark
-    const savedTheme = localStorage.getItem('hacklab_theme') || 'dark';
+    const savedTheme = localStorage.getItem('hacklab-theme') || 'dark';
     setTheme(savedTheme);
 
     // --- Initialization ---
     checkSession();
 
-    // --- Navigation & Tab Switching ---
+    // Screen Switching Logic
     navItems.forEach(item => {
         item.addEventListener('click', () => {
             const screenId = item.getAttribute('data-screen');
@@ -59,6 +78,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Special Refresh Logics
             if (screenId === 'users-screen' || screenId === 'bots-screen') {
                 refreshData();
+            }
+            if (screenId === 'welcome-screen') {
+                refreshWelcomeSettings();
+            }
+            if (screenId === 'achievements-screen') {
+                refreshAchievements();
             }
         });
     });
@@ -87,6 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function showDashboard(user) {
+        currentUser = user;
         document.getElementById('sidebar-bot-avatar').src = user.avatar;
         
         // Use the CSS state class for a smooth transition
@@ -363,7 +389,116 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Reset sidebar state on window resize
+    // Theme Card Event Listeners
+    document.querySelectorAll('.theme-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const themeId = card.dataset.themeId;
+            setTheme(themeId);
+        });
+    });
+
+    // Mobile Navigation (Close on click)
+    if (window.innerWidth < 768) {
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                sidebar.classList.remove('active');
+            });
+        });
+    }
+
+    // --- Welcome & Goodbye Logic ---
+    async function refreshWelcomeSettings() {
+        try {
+            // 1. Cargar canales para los selects
+            const resChannels = await fetch('/api/guild/channels');
+            if (resChannels.ok) {
+                const channels = await resChannels.json();
+                const welcomeSelect = document.getElementById('welcome-channel');
+                const goodbyeSelect = document.getElementById('goodbye-channel');
+                
+                // Los canales ya vienen filtrados por tipo 0 desde el backend
+                const options = channels.map(c => `<option value="${c.id}"># ${c.name}</option>`).join('');
+                welcomeSelect.innerHTML = `<option value="">Selecciona un canal...</option>` + options;
+                goodbyeSelect.innerHTML = `<option value="">Selecciona un canal...</option>` + options;
+            }
+
+            // 2. Cargar configuración actual (con timeout para asegurar que el DOM cargó los options)
+            setTimeout(async () => {
+                const resSettings = await fetch('/api/settings/welcome');
+                if (resSettings.ok) {
+                    const data = await resSettings.json();
+                    document.getElementById('welcome-toggle').checked = data.welcome_enabled;
+                    document.getElementById('welcome-channel').value = data.welcome_channel || '';
+                    document.getElementById('welcome-msg').value = data.welcome_message;
+                    
+                    document.getElementById('goodbye-toggle').checked = data.goodbye_enabled;
+                    document.getElementById('goodbye-channel').value = data.goodbye_channel || '';
+                    document.getElementById('goodbye-msg').value = data.goodbye_message;
+                }
+            }, 100);
+        } catch (err) { console.error("Error al cargar configuración", err); }
+    }
+
+    // --- Achievements Logic ---
+    async function refreshAchievements() {
+        if (!currentUser) {
+            console.warn("[Achievements] currentUser no definido aún, reintentando...");
+            setTimeout(refreshAchievements, 500);
+            return;
+        }
+        const grid = document.getElementById('achievements-grid');
+        grid.innerHTML = '<p>Cargando logros...</p>';
+
+        try {
+            const [allRes, userRes] = await Promise.all([
+                fetch('/api/achievements'),
+                fetch(`/api/users/${currentUser.id}/achievements`)
+            ]);
+
+            if (allRes.ok && userRes.ok) {
+                const all = await allRes.json();
+                const earned = await userRes.json();
+                const earnedIds = new Set(earned.map(a => a.id));
+
+                grid.innerHTML = all.map(a => `
+                    <div class="achievement-badge ${earnedIds.has(a.id) ? 'unlocked' : 'locked'}">
+                        <div class="badge-icon-wrapper">
+                            ${a.icon || '🏆'}
+                        </div>
+                        <span class="badge-name">${a.name}</span>
+                        <span class="badge-desc">${a.description}</span>
+                    </div>
+                `).join('') || '<p>No hay logros configurados aún.</p>';
+            }
+        } catch (err) { 
+            grid.innerHTML = '<p>Error cargando logros.</p>';
+            console.error(err); 
+        }
+    }
+
+    document.getElementById('save-welcome-btn')?.addEventListener('click', async () => {
+        const payload = {
+            welcome_enabled: document.getElementById('welcome-toggle').checked,
+            welcome_channel: document.getElementById('welcome-channel').value,
+            welcome_message: document.getElementById('welcome-msg').value,
+            goodbye_enabled: document.getElementById('goodbye-toggle').checked,
+            goodbye_channel: document.getElementById('goodbye-channel').value,
+            goodbye_message: document.getElementById('goodbye-msg').value,
+        };
+
+        try {
+            const res = await fetch('/api/settings/welcome', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                alert('¡Configuración guardada!');
+            }
+        } catch (err) { alert('Error al guardar'); }
+    });
+
+    console.log('✅ Dashboard initialized successfully');
     window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {
             sidebar.classList.remove('open');

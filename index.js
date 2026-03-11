@@ -12,8 +12,18 @@ const client = new Client({
   ],
 });
 
-// Admins ya no se cargan automáticamente desde .env aquí
-// Se pedirán a través de la Web o comandos.
+const db = require('./db');
+
+/**
+ * Función auxiliar para reemplazar variables en los mensajes
+ */
+function replaceVars(msg, member) {
+    if (!msg) return '';
+    return msg
+        .replace(/{user}/g, `<@${member.id}>`)
+        .replace(/{server}/g, member.guild.name)
+        .replace(/{count}/g, member.guild.memberCount);
+}
 
 /**
  * Función auxiliar para aplicar separadores de forma inteligente a un miembro.
@@ -511,6 +521,28 @@ client.once('ready', () => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
+  // --- Tracking de Logros ---
+  try {
+      const stats = await db.updateUserStats(message.author.id);
+      const allAchievements = await db.getAllAchievements();
+      const userEarned = await db.getUserAchievements(message.author.id);
+      const earnedIds = new Set(userEarned.map(a => a.id));
+
+      for (const achievement of allAchievements) {
+          if (!earnedIds.has(achievement.id)) {
+              if (achievement.milestone_type === 'messages' && stats.message_count >= achievement.milestone_value) {
+                  await db.earnAchievement(message.author.id, achievement.id);
+                  const embed = {
+                      color: 0xffd700,
+                      title: `${achievement.icon || '🏆'} ¡Logro Desbloqueado!`,
+                      description: `<@${message.author.id}> ha ganado el logro: **${achievement.name}**\n*${achievement.description}*`
+                  };
+                  message.channel.send({ embeds: [embed] });
+              }
+          }
+      }
+  } catch (err) { console.error("[Achievements] Error:", err); }
+
   if (message.content.startsWith('!setup_community')) {
     // Solo el creador del servidor original puede ejecutarlo por comando de texto
     if (message.guild.ownerId !== message.author.id) {
@@ -537,37 +569,52 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// Auto-rol al unirse usando DB
+// Auto-rol al unirse usando DB y Mensaje de Bienvenida
 client.on('guildMemberAdd', async (member) => {
     if (member.user.bot) return;
     try {
         const config = await getGuildConfig(member.guild.id);
+        
+        // 1. Asignación de Rol Base
         let baseRole;
-
         if (config && config.base_role_id) {
             baseRole = member.guild.roles.cache.get(config.base_role_id);
-        }
-
-        // Fallback: Si no hay en DB o el rol ya no existe, buscar por nombre
-        if (!baseRole) {
-            const commonBaseNames = ['usuario', 'miembro', 'member', 'programador', 'dev', 'verificado'];
-            baseRole = member.guild.roles.cache.find(role => 
-                commonBaseNames.some(n => role.name.toLowerCase().includes(n)) &&
-                !role.permissions.has(PermissionsBitField.Flags.Administrator)
-            );
         }
 
         if (baseRole) {
             await member.roles.add(baseRole);
             console.log(`[AutoRole] Asignado '${baseRole.name}' a ${member.user.tag}`);
-            
-            // Aplicar separadores inmediatamente después del rol base
             setTimeout(() => applySmartRoles(member), 3000);
-        } else {
-            console.log(`[AutoRole] ⚠️ No se encontró un rol base para asignar a ${member.user.tag}`);
         }
+
+        // 2. Mensaje de Bienvenida (MEE6 style)
+        sqliteDb.get(`SELECT * FROM welcome_settings WHERE guild_id = ?`, [member.guild.id], async (err, welcome) => {
+            if (welcome && welcome.welcome_enabled && welcome.welcome_channel) {
+                const channel = member.guild.channels.cache.get(welcome.welcome_channel);
+                if (channel) {
+                    await channel.send(replaceVars(welcome.welcome_message, member));
+                }
+            }
+        });
     } catch(err) {
-        console.error("[AutoRole] Error crítico:", err.message);
+        console.error("[Event:Add] Error crítico:", err.message);
+    }
+});
+
+// Mensaje de Despedida
+client.on('guildMemberRemove', async (member) => {
+    if (member.user.bot) return;
+    try {
+        sqliteDb.get(`SELECT * FROM welcome_settings WHERE guild_id = ?`, [member.guild.id], async (err, settings) => {
+            if (settings && settings.goodbye_enabled && settings.goodbye_channel) {
+                const channel = member.guild.channels.cache.get(settings.goodbye_channel);
+                if (channel) {
+                    await channel.send(replaceVars(settings.goodbye_message, member));
+                }
+            }
+        });
+    } catch (err) {
+        console.error("[Event:Remove] Error:", err.message);
     }
 });
 

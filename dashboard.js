@@ -4,6 +4,7 @@ const path = require('path');
 const session = require('express-session');
 const axios = require('axios');
 const crypto = require('crypto');
+const db = require('./db');
 
 function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
   const app = express();
@@ -21,17 +22,14 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
     resave: false,
     saveUninitialized: false,
     cookie: { 
-      secure: false, // In production with HTTPS, change to true
-      maxAge: 1000 * 60 * 60 * 24 // 1 day
+      secure: false,
+      maxAge: 1000 * 60 * 60 * 24
     }
   }));
 
-  // Servir archivos estáticos del frontend
   app.use(express.static(path.join(__dirname, 'public')));
 
-  // Middleware para verificar la sesión
   const authMiddleware = (req, res, next) => {
-    // Para endpoints SSE aseguramos que reconozca la cookie
     if (req.session && req.session.user) {
       next();
     } else {
@@ -53,7 +51,6 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
     if (!code) return res.send("No se proporcionó un código OAuth.");
 
     try {
-      // 1. Intercambiar código por token
       const params = new URLSearchParams();
       params.append('client_id', DISCORD_CLIENT_ID);
       params.append('client_secret', DISCORD_CLIENT_SECRET);
@@ -68,8 +65,6 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
       });
 
       const accessToken = tokenResponse.data.access_token;
-
-      // 2. Obtener identidad del usuario
       const userResponse = await axios.get('https://discord.com/api/users/@me', {
         headers: {
           Authorization: `Bearer ${accessToken}`
@@ -79,16 +74,11 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
       const discordUser = userResponse.data;
       const targetGuild = discordClient.guilds.cache.first();
 
-      if (!targetGuild) {
-        return res.send("El bot no está en ningún servidor aún. Invítalo primero.");
-      }
+      if (!targetGuild) return res.send("El bot no está en ningún servidor aún.");
 
-      // 3. Verificar si es administrador en el servidor
       try {
         const member = await targetGuild.members.fetch(discordUser.id);
         const isAdmin = member.permissions.has('Administrator');
-        
-        // El dueño del servidor siempre es admin
         const isOwner = targetGuild.ownerId === discordUser.id;
 
         if (isAdmin || isOwner) {
@@ -101,25 +91,17 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
             };
             res.redirect('/');
         } else {
-            res.send("<h1>Acceso Denegado</h1><p>No tienes el rol de Administrador en el servidor.</p><a href='/'>Volver al inicio</a>");
+            res.send("Acceso Denegado. No eres Admin.");
         }
       } catch (err) {
-         console.error("Error buscando miembro en guild:", err);
-         res.send("<h1>Acceso Denegado</h1><p>No parece que seas miembro del servidor donde está el bot.</p><a href='/'>Volver al inicio</a>");
+         res.send("No eres miembro del servidor.");
       }
-
-    } catch (error) {
-      console.error("Error en OAuth2:", error.response ? error.response.data : error.message);
-      res.status(500).send("Error de autenticación con Discord.");
-    }
+    } catch (error) { res.status(500).send("Error autenticación."); }
   });
 
   app.get('/api/auth/me', (req, res) => {
-      if (req.session && req.session.user) {
-          res.json({ authenticated: true, user: req.session.user });
-      } else {
-          res.status(401).json({ authenticated: false });
-      }
+      if (req.session && req.session.user) res.json({ authenticated: true, user: req.session.user });
+      else res.status(401).json({ authenticated: false });
   });
 
   app.post('/api/logout', (req, res) => {
@@ -128,163 +110,154 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
   });
 
   app.post('/api/restart', authMiddleware, (req, res) => {
-      res.json({ success: true, message: 'Reiniciando el bot. Por favor, espera...' });
-      
-      console.log('🤖 Reinicio solicitado desde el panel web. Saliendo...');
-      
-      // Damos un pequeño respiro para que la request de red termine antes de matar el proceso
-      setTimeout(() => {
-          process.exit(0);
-      }, 1000);
+      res.json({ success: true });
+      setTimeout(() => process.exit(0), 1000);
   });
 
-  // Endpoint de Estado del Bot
   app.get('/api/status', authMiddleware, (req, res) => {
-    const guildCount = discordClient.guilds.cache.size;
-    const userCount = discordClient.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
-
     res.json({
       online: true,
       botTag: discordClient.user.tag,
       botAvatar: discordClient.user.displayAvatarURL(),
-      guildCount,
-      userCount
+      guildCount: discordClient.guilds.cache.size,
+      userCount: discordClient.guilds.cache.reduce((acc, g) => acc + g.memberCount, 0)
     });
   });
 
-  // Endpoint para obtener todos los ROLES del servidor (ignorando @everyone y roles de bots)
   app.get('/api/roles', authMiddleware, async (req, res) => {
     try {
-        const targetGuild = discordClient.guilds.cache.first();
-        if (!targetGuild) return res.json([]);
-
-        const roles = targetGuild.roles.cache
-            .filter(r => {
-                const isSeparator = r.name.includes("━━") || r.name.includes("══") || r.name.includes("---");
-                return r.name !== '@everyone' && !r.managed && !isSeparator;
-            })
+        const guild = discordClient.guilds.cache.first();
+        if (!guild) return res.json([]);
+        const roles = guild.roles.cache
+            .filter(r => r.name !== '@everyone' && !r.managed && !(r.name.includes("━━") || r.name.includes("══") || r.name.includes("---")))
             .sort((a, b) => b.position - a.position)
-            .map(r => ({
-                id: r.id,
-                name: r.name,
-                color: r.hexColor,
-                position: r.position
-            }));
-        
+            .map(r => ({ id: r.id, name: r.name, color: r.hexColor }));
         res.json(roles);
-    } catch (err) {
-        res.status(500).json({ error: 'Error obteniendo roles' });
+    } catch (err) { 
+        console.error("❌ [Dashboard] Error en /api/roles:", err);
+        res.status(500).json({ error: 'Error' }); 
     }
   });
 
-  // Endpoint para obtener usuarios DETALLADOS (incluyendo sus roles)
   app.get('/api/users', authMiddleware, async (req, res) => {
     try {
-      const targetGuild = discordClient.guilds.cache.first();
-      if (!targetGuild) return res.json([]);
-
-      const members = await targetGuild.members.fetch();
+      const guild = discordClient.guilds.cache.first();
+      if (!guild) {
+        console.warn("⚠️ [Dashboard] No se encontró ninguna guild en la cache para /api/users.");
+        return res.json([]);
+      }
       
-      const usersList = members.map(m => ({
+      console.log(`🔍 [Dashboard] Fetching members for: ${guild.name}`);
+      const members = await guild.members.fetch();
+      res.json(members.map(m => ({
         id: m.user.id,
         username: m.user.username,
         displayName: m.displayName,
         avatarUrl: m.user.displayAvatarURL({ size: 64 }),
-        roles: m.roles.cache
-            .filter(r => {
-                const isSeparator = r.name.includes("━━") || r.name.includes("══") || r.name.includes("---");
-                return r.name !== '@everyone' && !isSeparator;
-            })
-            .map(r => ({ id: r.id, name: r.name, color: r.hexColor })),
-        joinedAt: m.joinedAt,
+        roles: m.roles.cache.filter(r => r.name !== '@everyone').map(r => ({ id: r.id, name: r.name, color: r.hexColor })),
         isAdmin: m.permissions.has('Administrator'),
         isBot: m.user.bot
-      }));
-
-      res.json(usersList);
-    } catch (err) {
-      console.error("Error obteniendo usuarios:", err);
-      res.status(500).json({ error: 'Error interno obteniendo usuarios' });
+      })));
+    } catch (err) { 
+      console.error("❌ [Dashboard] Error en /api/users:", err);
+      res.status(500).json({ error: 'Error' }); 
     }
   });
 
-  // Endpoint para GESTIONAR ROLES de un usuario específico
+  app.get('/api/guild/channels', authMiddleware, async (req, res) => {
+    try {
+        const guild = discordClient.guilds.cache.first();
+        if (!guild) {
+            console.log("⚠️ [Dashboard] No se encontró ninguna guild en la cache.");
+            return res.json([]);
+        }
+
+        console.log(`🔍 [Dashboard] Buscando canales para la guild: ${guild.name} (${guild.id})`);
+        const channels = guild.channels.cache
+            .filter(c => c.type === 0) // GuildText
+            .map(c => ({ id: c.id, name: c.name }));
+        
+        console.log(`✅ [Dashboard] Encontrados ${channels.length} canales de texto.`);
+        res.json(channels);
+    } catch (err) { 
+        console.error("❌ [Dashboard] Error en /api/guild/channels:", err);
+        res.status(500).json({ error: 'Error' }); 
+    }
+  });
+
   app.post('/api/users/:userId/roles', authMiddleware, async (req, res) => {
       const { userId } = req.params;
-      const { roleId, action } = req.body; // action: 'add' o 'remove'
-      
+      const { roleId, action } = req.body;
       try {
-          const targetGuild = discordClient.guilds.cache.first();
-          const member = await targetGuild.members.fetch(userId);
-          const role = targetGuild.roles.cache.get(roleId);
-
-          if (!member || !role) return res.status(404).json({ error: 'Miembro o Rol no encontrado' });
-
-          if (action === 'add') {
-              await member.roles.add(role);
-          } else {
-              await member.roles.remove(role);
-          }
-
-          // Trigger automated separator update
+          const guild = discordClient.guilds.cache.first();
+          const member = await guild.members.fetch(userId);
+          const role = guild.roles.cache.get(roleId);
+          if (action === 'add') await member.roles.add(role);
+          else await member.roles.remove(role);
           setTimeout(() => applySmartRoles(member), 500);
-
           res.json({ success: true });
-      } catch (err) {
-          console.error("Error gestionando rol:", err);
-          res.status(500).json({ error: err.message });
-      }
+      } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  // Endpoint para ejecutar el Setup de la Comunidad
+  app.get('/api/settings/welcome', authMiddleware, async (req, res) => {
+      try {
+          const guild = discordClient.guilds.cache.first();
+          db.getSettings(guild.id, (err, row) => {
+              if (err) return res.status(500).json({ error: err.message });
+              res.json(row || {
+                  welcome_enabled: 0, welcome_channel: null, welcome_message: '¡Bienvenido {user} a {server}!',
+                  goodbye_enabled: 0, goodbye_channel: null, goodbye_message: '{user} ha abandonado el servidor.'
+              });
+          });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/settings/welcome', authMiddleware, async (req, res) => {
+      const g = discordClient.guilds.cache.first();
+      db.updateSettings(g.id, req.body, (err) => {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ success: true });
+      });
+  });
+
+  // --- Sistema de Logros (Achievements) ---
+  app.get('/api/achievements', authMiddleware, async (req, res) => {
+      try {
+          const achievements = await db.getAllAchievements();
+          res.json(achievements);
+      } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/achievements', authMiddleware, async (req, res) => {
+      try {
+          await db.createAchievement(req.body);
+          res.json({ success: true });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get('/api/users/:userId/achievements', authMiddleware, async (req, res) => {
+      try {
+          const achievements = await db.getUserAchievements(req.params.userId);
+          res.json(achievements);
+      } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
   app.post('/api/setup', authMiddleware, async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    
-    // Obtener admins y mods del cuerpo de la petición mediante headers customizados
-    const adminsParam = req.headers['x-admins'] || "";
-    const customAdmins = adminsParam.split(',').filter(Boolean);
-    
-    const modsParam = req.headers['x-mods'] || "";
-    const customMods = modsParam.split(',').filter(Boolean);
-    
-    const sendLog = (msg) => {
-      res.write(`data: ${JSON.stringify({ message: msg })}\n\n`);
-    };
-
+    const admins = (req.headers['x-admins'] || "").split(',').filter(Boolean);
+    const mods = (req.headers['x-mods'] || "").split(',').filter(Boolean);
+    const sendLog = (msg) => res.write(`data: ${JSON.stringify({ message: msg })}\n\n`);
     try {
-      // El servidor primero en el que está el bot.
-      let targetGuild = discordClient.guilds.cache.first();
-
-      if (!targetGuild) {
-         sendLog("❌ Error: El bot no está en ningún servidor. Por favor invítalo primero.");
-         return res.write('event: done\ndata: {}\n\n');
-      }
-
-      sendLog(`Detectado servidor objetivo: ${targetGuild.name}`);
-      
-      // Asegurar que el dueño del servidor siempre sea admin
-      if (!customAdmins.includes(targetGuild.ownerId)) {
-          customAdmins.push(targetGuild.ownerId);
-      }
-
-      await setupCommunityLogic(targetGuild, sendLog, customAdmins, customMods);
-      
-      sendLog("✅ Proceso completado exitosamente.");
-    } catch (err) {
-      sendLog(`❌ Error crítico: ${err.message}`);
-    }
-
+      const guild = discordClient.guilds.cache.first();
+      if (!admins.includes(guild.ownerId)) admins.push(guild.ownerId);
+      await setupCommunityLogic(guild, sendLog, admins, mods);
+      sendLog("✅ Proceso completado.");
+    } catch (err) { sendLog(`❌ Error: ${err.message}`); }
     res.write('event: done\ndata: {}\n\n');
     res.end();
   });
 
-  app.listen(PORT, () => {
-    console.log(`=========================================`);
-    console.log(`🌐 PANEL WEB DISPONIBLE: http://localhost:${PORT}`);
-    console.log(`=========================================`);
-  });
+  app.listen(PORT, () => console.log(`🌐 Dashboard en puerto ${PORT}`));
 }
 
 module.exports = { startDashboard };
