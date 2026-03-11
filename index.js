@@ -13,6 +13,8 @@ const client = new Client({
 });
 
 const db = require('./db');
+const MusicManager = require('./music/MusicManager');
+const musicManager = new MusicManager(client);
 
 /**
  * Función auxiliar para reemplazar variables en los mensajes
@@ -515,7 +517,7 @@ client.once('ready', () => {
   console.log('Esperando comando: !setup_community en canales o mediante el Dashboard Web.');
   
   // Iniciar el panel web cuando el bot esté listo
-  startDashboard(client, setupCommunity, applySmartRoles);
+  startDashboard(client, setupCommunity, applySmartRoles, musicManager);
 });
 
 client.on('messageCreate', async (message) => {
@@ -567,6 +569,10 @@ client.on('messageCreate', async (message) => {
       // El error ya fue logueado
     }
   }
+
+  // --- Comandos de Música ---
+  const { handleMusicCommand } = require('./commands/music');
+  if (await handleMusicCommand(message, musicManager)) return;
 });
 
 // Auto-rol al unirse usando DB y Mensaje de Bienvenida
@@ -588,14 +594,13 @@ client.on('guildMemberAdd', async (member) => {
         }
 
         // 2. Mensaje de Bienvenida (MEE6 style)
-        sqliteDb.get(`SELECT * FROM welcome_settings WHERE guild_id = ?`, [member.guild.id], async (err, welcome) => {
-            if (welcome && welcome.welcome_enabled && welcome.welcome_channel) {
-                const channel = member.guild.channels.cache.get(welcome.welcome_channel);
-                if (channel) {
-                    await channel.send(replaceVars(welcome.welcome_message, member));
-                }
+        const welcome = await db.getSettings(member.guild.id);
+        if (welcome && welcome.welcome_enabled && welcome.welcome_channel) {
+            const channel = member.guild.channels.cache.get(welcome.welcome_channel);
+            if (channel) {
+                await channel.send(replaceVars(welcome.welcome_message, member));
             }
-        });
+        }
     } catch(err) {
         console.error("[Event:Add] Error crítico:", err.message);
     }
@@ -605,14 +610,13 @@ client.on('guildMemberAdd', async (member) => {
 client.on('guildMemberRemove', async (member) => {
     if (member.user.bot) return;
     try {
-        sqliteDb.get(`SELECT * FROM welcome_settings WHERE guild_id = ?`, [member.guild.id], async (err, settings) => {
-            if (settings && settings.goodbye_enabled && settings.goodbye_channel) {
-                const channel = member.guild.channels.cache.get(settings.goodbye_channel);
-                if (channel) {
-                    await channel.send(replaceVars(settings.goodbye_message, member));
-                }
+        const settings = await db.getSettings(member.guild.id);
+        if (settings && settings.goodbye_enabled && settings.goodbye_channel) {
+            const channel = member.guild.channels.cache.get(settings.goodbye_channel);
+            if (channel) {
+                await channel.send(replaceVars(settings.goodbye_message, member));
             }
-        });
+        }
     } catch (err) {
         console.error("[Event:Remove] Error:", err.message);
     }

@@ -85,6 +85,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (screenId === 'achievements-screen') {
                 refreshAchievements();
             }
+            if (screenId === 'music-screen') {
+                refreshMusicStatus();
+            }
         });
     });
 
@@ -190,31 +193,73 @@ document.addEventListener('DOMContentLoaded', () => {
     function appendUserRow(table, u) {
         const tr = document.createElement('tr');
         
-        const rolesHtml = u.roles.map(r => `
-            <span class="role-badge" style="border-color: ${r.color}44; color: ${r.color}">
-                ${r.name}
-                <span class="btn-remove-role" onclick="manageRole('${u.id}', '${r.id}', 'remove')">&times;</span>
-            </span>
-        `).join('');
-
-        tr.innerHTML = `
-            <td class="user-cell">
-                <img src="${u.avatarUrl}" class="user-avatar">
-                <div class="user-info">
-                    <span class="display-name">${u.displayName}</span>
-                    <span class="user-tag">@${u.username}</span>
-                </div>
-            </td>
-            <td>
-                <div class="role-tags">
-                    ${rolesHtml}
-                    <button class="btn-add-role" onclick="showRoleAdd(event, '${u.id}')">+ Añadir</button>
-                </div>
-            </td>
-            <td>
-                <button class="btn-action-small" onclick="copyId('${u.id}')">Copiar ID</button>
-            </td>
-        `;
+        // Celda de usuario (avatar + info)
+        const userCell = document.createElement('td');
+        userCell.className = 'user-cell';
+        
+        const avatar = document.createElement('img');
+        avatar.src = sanitizeUrl(u.avatarUrl);
+        avatar.className = 'user-avatar';
+        avatar.alt = 'Avatar';
+        
+        const userInfo = document.createElement('div');
+        userInfo.className = 'user-info';
+        
+        const displayName = document.createElement('span');
+        displayName.className = 'display-name';
+        displayName.textContent = u.displayName; // Seguro: usa textContent
+        
+        const userTag = document.createElement('span');
+        userTag.className = 'user-tag';
+        userTag.textContent = `@${u.username}`; // Seguro: usa textContent
+        
+        userInfo.appendChild(displayName);
+        userInfo.appendChild(userTag);
+        userCell.appendChild(avatar);
+        userCell.appendChild(userInfo);
+        
+        // Celda de roles
+        const rolesCell = document.createElement('td');
+        const roleTags = document.createElement('div');
+        roleTags.className = 'role-tags';
+        
+        u.roles.forEach(r => {
+            const roleBadge = document.createElement('span');
+            roleBadge.className = 'role-badge';
+            roleBadge.style.borderColor = `${r.color}44`;
+            roleBadge.style.color = r.color;
+            roleBadge.textContent = r.name; // Seguro: usa textContent
+            
+            const removeBtn = document.createElement('span');
+            removeBtn.className = 'btn-remove-role';
+            removeBtn.textContent = '×';
+            removeBtn.onclick = () => manageRole(u.id, r.id, 'remove');
+            
+            roleBadge.appendChild(removeBtn);
+            roleTags.appendChild(roleBadge);
+        });
+        
+        const addBtn = document.createElement('button');
+        addBtn.className = 'btn-add-role';
+        addBtn.textContent = '+ Añadir';
+        addBtn.onclick = (event) => showRoleAdd(event, u.id);
+        
+        roleTags.appendChild(addBtn);
+        rolesCell.appendChild(roleTags);
+        
+        // Celda de acciones
+        const actionsCell = document.createElement('td');
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'btn-action-small';
+        copyBtn.textContent = 'Copiar ID';
+        copyBtn.onclick = () => copyId(u.id);
+        
+        actionsCell.appendChild(copyBtn);
+        
+        // Ensamblar fila
+        tr.appendChild(userCell);
+        tr.appendChild(rolesCell);
+        tr.appendChild(actionsCell);
         table.appendChild(tr);
     }
 
@@ -303,14 +348,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!input) return;
         input.addEventListener('input', (e) => {
             const val = e.target.value.toLowerCase();
-            dropdown.innerHTML = '';
+            dropdown.innerHTML = ''; // Limpiar dropdown
             if (!val) return dropdown.classList.add('hidden');
 
             const filtered = allUsers.filter(u => !u.isBot && (u.username.toLowerCase().includes(val) || u.displayName.toLowerCase().includes(val))).slice(0, 5);
             filtered.forEach(u => {
                 const d = document.createElement('div');
                 d.className = 'user-dropdown-item';
-                d.innerHTML = `<img src="${u.avatarUrl}"><span>${u.displayName}</span>`;
+                
+                // Crear elementos de forma segura
+                const img = document.createElement('img');
+                img.src = sanitizeUrl(u.avatarUrl);
+                img.alt = 'Avatar';
+                
+                const span = document.createElement('span');
+                span.textContent = u.displayName; // Seguro: usa textContent
+                
+                d.appendChild(img);
+                d.appendChild(span);
                 d.onclick = () => { onSelect(u); input.value = ''; dropdown.classList.add('hidden'); };
                 dropdown.appendChild(d);
             });
@@ -320,11 +375,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderChips(containerId, list, onRemove) {
         const container = document.getElementById(containerId);
-        container.innerHTML = '';
+        container.innerHTML = ''; // Limpiar contenedor
         list.forEach(u => {
             const chip = document.createElement('div');
             chip.className = 'user-chip';
-            chip.innerHTML = `<img src="${u.avatarUrl}"><span>${u.displayName}</span><span style="cursor:pointer" onclick="this.parentElement.remove(); window.triggerRemove('${containerId}', '${u.id}')">&times;</span>`;
+            
+            // Crear elementos de forma segura
+            const img = document.createElement('img');
+            img.src = sanitizeUrl(u.avatarUrl);
+            img.alt = 'Avatar';
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = u.displayName; // Seguro: usa textContent
+            
+            const removeSpan = document.createElement('span');
+            removeSpan.style.cursor = 'pointer';
+            removeSpan.textContent = '×';
+            removeSpan.onclick = () => {
+                chip.remove();
+                window.triggerRemove(containerId, u.id);
+            };
+            
+            chip.appendChild(img);
+            chip.appendChild(nameSpan);
+            chip.appendChild(removeSpan);
             container.appendChild(chip);
         });
     }
@@ -496,6 +570,80 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('¡Configuración guardada!');
             }
         } catch (err) { alert('Error al guardar'); }
+    });
+
+    // --- Music System Logic ---
+    async function refreshMusicStatus() {
+        try {
+            const res = await fetch('/api/music/status');
+            if (res.ok) {
+                const data = await res.json();
+                const statusDot = document.getElementById('player-status-dot');
+                const statusText = document.getElementById('player-status-text');
+                const trackTitle = document.getElementById('current-track-title');
+                const trackAuthor = document.getElementById('current-track-author');
+
+                if (data.active) {
+                    statusDot.classList.add('active');
+                    statusText.innerText = 'Transmitiendo en Vivo';
+                    trackTitle.innerText = data.currentTrack || 'Reproduciendo...';
+                    trackAuthor.innerText = data.channel || 'Navegador Virtual Activo';
+                } else {
+                    statusDot.classList.remove('active');
+                    statusText.innerText = 'Navegador Inactivo';
+                    trackTitle.innerText = 'Nada sonando';
+                    trackAuthor.innerText = 'Inicia una búsqueda para empezar';
+                }
+            }
+        } catch (err) { console.error('Error refreshing music status:', err); }
+    }
+
+    // Auto-refresh music status when on the screen
+    setInterval(() => {
+        const musicScreen = document.getElementById('music-screen');
+        if (musicScreen && musicScreen.classList.contains('active')) {
+            refreshMusicStatus();
+        }
+    }, 5000);
+
+    document.getElementById('btn-search-music')?.addEventListener('click', async () => {
+        const query = document.getElementById('music-search-input').value;
+        if (!query) return;
+
+        try {
+            const res = await fetch('/api/music/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query })
+            });
+            if (res.ok) {
+                refreshMusicStatus();
+            } else {
+                const err = await res.json();
+                alert(`Error: ${err.message || 'No se pudo iniciar la reproducción'}`);
+            }
+        } catch (err) { alert('Error al conectar con la API de música'); }
+    });
+
+    document.getElementById('btn-music-stop')?.addEventListener('click', async () => {
+        try {
+            const res = await fetch('/api/music/stop', { method: 'POST' });
+            if (res.ok) refreshMusicStatus();
+        } catch (err) { console.error(err); }
+    });
+
+    document.getElementById('btn-save-yt-session')?.addEventListener('click', async () => {
+        const cookies = document.getElementById('yt-session-cookies').value;
+        try {
+            const res = await fetch('/api/music/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cookies })
+            });
+            if (res.ok) {
+                alert('¡Sesión de YouTube guardada!');
+            }
+        } catch (err) { alert('Error al guardar sesión'); }
     });
 
     console.log('✅ Dashboard initialized successfully');

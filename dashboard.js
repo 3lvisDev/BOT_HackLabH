@@ -2,11 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const session = require('express-session');
+const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const crypto = require('crypto');
 const db = require('./db');
 
-function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
+function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, musicManager) {
   const app = express();
   const PORT = process.env.PORT || 3000;
   
@@ -14,16 +15,54 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
   const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
   const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || `http://localhost:${PORT}/api/auth/callback`;
 
-  app.use(cors());
+  // Configurar CORS de forma segura
+  const corsOptions = {
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    credentials: true,
+    optionsSuccessStatus: 200
+  };
+  app.use(cors(corsOptions));
   app.use(express.json());
+  
+  // Rate limiting general para todas las rutas API
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 100, // Límite de 100 peticiones por ventana
+    message: 'Demasiadas peticiones desde esta IP, por favor intenta de nuevo más tarde.',
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  
+  // Rate limiting estricto para autenticación
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 5, // Solo 5 intentos de login
+    message: 'Demasiados intentos de inicio de sesión, por favor intenta de nuevo más tarde.',
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  
+  // Rate limiting para operaciones sensibles
+  const strictLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minuto
+    max: 10, // 10 peticiones por minuto
+    message: 'Demasiadas peticiones, por favor espera un momento.',
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  
+  // Aplicar rate limiting general a todas las rutas API
+  app.use('/api/', apiLimiter);
   
   app.use(session({
     secret: process.env.WEB_ADMIN_PASSWORD || crypto.randomBytes(20).toString('hex'),
     resave: false,
     saveUninitialized: false,
     cookie: { 
-      secure: false,
-      maxAge: 1000 * 60 * 60 * 24
+      secure: process.env.NODE_ENV === 'production', // HTTPS en producción
+      httpOnly: true, // Previene acceso desde JavaScript
+      sameSite: 'strict', // Previene CSRF
+      maxAge: 1000 * 60 * 60 * 24 // 24 horas
     }
   }));
 
@@ -38,7 +77,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
   };
 
   // --- OAUTH2 DISCORD ROUTES ---
-  app.get('/api/auth/discord', (req, res) => {
+  app.get('/api/auth/discord', authLimiter, (req, res) => {
     if (!DISCORD_CLIENT_ID || !DISCORD_REDIRECT_URI) {
         return res.status(500).send("Las variables DISCORD_CLIENT_ID o DISCORD_REDIRECT_URI no están configuradas en .env");
     }
@@ -46,7 +85,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
     res.redirect(url);
   });
 
-  app.get('/api/auth/callback', async (req, res) => {
+  app.get('/api/auth/callback', authLimiter, async (req, res) => {
     const code = req.query.code;
     if (!code) return res.send("No se proporcionó un código OAuth.");
 
@@ -87,7 +126,8 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
                 username: discordUser.username,
                 avatar: discordUser.avatar 
                   ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
-                  : 'https://cdn.discordapp.com/embed/avatars/0.png'
+                  : 'https://cdn.discordapp.com/embed/avatars/0.png',
+                guildId: targetGuild.id
             };
             res.redirect('/');
         } else {
@@ -109,7 +149,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
       res.json({ success: true });
   });
 
-  app.post('/api/restart', authMiddleware, (req, res) => {
+  app.post('/api/restart', authMiddleware, strictLimiter, (req, res) => {
       res.json({ success: true });
       setTimeout(() => process.exit(0), 1000);
   });
@@ -202,22 +242,20 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
   app.get('/api/settings/welcome', authMiddleware, async (req, res) => {
       try {
           const guild = discordClient.guilds.cache.first();
-          db.getSettings(guild.id, (err, row) => {
-              if (err) return res.status(500).json({ error: err.message });
-              res.json(row || {
-                  welcome_enabled: 0, welcome_channel: null, welcome_message: '¡Bienvenido {user} a {server}!',
-                  goodbye_enabled: 0, goodbye_channel: null, goodbye_message: '{user} ha abandonado el servidor.'
-              });
+          const row = await db.getSettings(guild.id);
+          res.json(row || {
+              welcome_enabled: 0, welcome_channel: null, welcome_message: '¡Bienvenido {user} a {server}!',
+              goodbye_enabled: 0, goodbye_channel: null, goodbye_message: '{user} ha abandonado el servidor.'
           });
       } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   app.post('/api/settings/welcome', authMiddleware, async (req, res) => {
-      const g = discordClient.guilds.cache.first();
-      db.updateSettings(g.id, req.body, (err) => {
-          if (err) return res.status(500).json({ error: err.message });
+      try {
+          const g = discordClient.guilds.cache.first();
+          await db.updateSettings(g.id, req.body);
           res.json({ success: true });
-      });
+      } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // --- Sistema de Logros (Achievements) ---
@@ -242,7 +280,46 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles) {
       } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  app.post('/api/setup', authMiddleware, async (req, res) => {
+  // --- Music System Routes ---
+  app.get('/api/music/status', authMiddleware, (req, res) => {
+      res.json(musicManager.getStatus());
+  });
+
+  app.post('/api/music/play', authMiddleware, async (req, res) => {
+      try {
+          const { query } = req.body;
+          const guild = discordClient.guilds.cache.first();
+          
+          // Buscar si el admin está en un canal de voz
+          const member = await guild.members.fetch(req.session.user.id);
+          let channelId = member.voice.channelId;
+          
+          if (!channelId) {
+              const settings = await db.getMusicSettings(guild.id);
+              channelId = settings?.last_channel_id || guild.channels.cache.find(c => c.type === 2)?.id;
+          }
+          
+          if (!channelId) return res.status(400).json({ message: "No se encontró canal de voz. Únete a uno primero." });
+          
+          await musicManager.play(guild.id, channelId, query);
+          res.json({ success: true });
+      } catch (err) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post('/api/music/stop', authMiddleware, async (req, res) => {
+      await musicManager.stop();
+      res.json({ success: true });
+  });
+
+  app.post('/api/music/session', authMiddleware, async (req, res) => {
+      try {
+          const guild = discordClient.guilds.cache.first();
+          await db.updateMusicSettings(guild.id, { yt_cookies: req.body.cookies });
+          res.json({ success: true });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/setup', authMiddleware, strictLimiter, async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     const admins = (req.headers['x-admins'] || "").split(',').filter(Boolean);
     const mods = (req.headers['x-mods'] || "").split(',').filter(Boolean);
