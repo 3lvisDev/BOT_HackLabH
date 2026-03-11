@@ -1,21 +1,54 @@
 # Plan de Implementación: Sistema de Música con YouTube Premium
 
+## ⚠️ ESTADO ACTUAL: REVISIÓN COMPLETADA - REQUIERE CORRECCIONES
+
+**Última Revisión:** 2026-03-11  
+**Resultado:** IMPLEMENTACIÓN INCOMPLETA con ERRORES CRÍTICOS  
+**Ver:** `REVIEW_REPORT.md` para detalles completos
+
 ## Descripción General
 
 Este plan implementa un sistema de música para el bot de Discord HackLab que permite reproducir audio de YouTube Premium mediante un navegador virtual (Playwright + Chromium), captura de audio con ffmpeg/PulseAudio, y transmisión a canales de voz de Discord. La implementación sigue un enfoque incremental con checkpoints para pruebas iterativas.
+
+## 🔴 CORRECCIONES CRÍTICAS REQUERIDAS (Hacer PRIMERO)
+
+- [ ] **CORRECCIÓN 1:** Eliminar endpoints `/api/music/play` y `/api/music/stop` del dashboard
+  - **Archivo:** `dashboard.js` líneas 288-313
+  - **Razón:** Viola Requirement 6.10 - Dashboard NO debe tener controles de reproducción
+  - **Cómo:** Comentar o eliminar esos endpoints completamente
+
+- [ ] **CORRECCIÓN 2:** Eliminar botones Play/Stop del dashboard HTML
+  - **Archivo:** `public/index.html` líneas 385-391, `public/script.js`
+  - **Razón:** Dashboard es solo para monitoreo, no control
+  - **Cómo:** Eliminar botones y sus event listeners
+
+- [ ] **CORRECCIÓN 3:** Corregir lógica de sesión única en `play()`
+  - **Archivo:** `music/MusicManager.js` línea 27
+  - **Razón:** Debe rechazar con error, no detener sesión activa
+  - **Cómo:** Cambiar `await this.stop()` por `throw new Error(\`Ya hay una reproducción activa en el canal: ${this.channelName}\`)`
+
+- [ ] **CORRECCIÓN 4:** Implementar encriptación de cookies
+  - **Archivo:** `db.js`
+  - **Razón:** Requirement 3.4 - Cookies deben estar encriptadas
+  - **Cómo:** Usar crypto de Node.js para encriptar antes de guardar
+
+- [ ] **CORRECCIÓN 5:** Agregar validación de cookies
+  - **Archivo:** `music/validation.js` y `dashboard.js`
+  - **Razón:** Requirement 3.2 - Validar formato JSON antes de guardar
+  - **Cómo:** Crear `validateYouTubeCookies()` y usarla en endpoint
 
 ## Tareas
 
 ### Fase 1: Funcionalidad Básica del Comando !play
 
-- [ ] 1. Configurar estructura base del sistema de música
+- [x] 1. Configurar estructura base del sistema de música ✅ COMPLETADO
   - Crear archivo `commands/music.js` para comandos de Discord
   - Crear archivo `music/MusicManager.js` con clase base y propiedades iniciales
   - Definir estructura de estado de sesión (isActive, channelId, channelName, currentTrack, guildId)
   - _Requerimientos: 1.4, 2.1_
 
 - [ ] 2. Implementar validación de inputs y comandos básicos
-  - [ ] 2.1 Crear función `validateMusicQuery()` en `music/validation.js`
+  - [x] 2.1 Crear función `validateMusicQuery()` en `music/validation.js` ✅ COMPLETADO
     - Validar longitud máxima de 500 caracteres
     - Rechazar protocolos maliciosos (javascript:, data:)
     - Sanitizar y retornar query limpia
@@ -26,21 +59,21 @@ Este plan implementa un sistema de música para el bot de Discord HackLab que pe
     - **Property 15: Input Sanitization**
     - **Valida: Requerimientos 5.3, 5.2**
   
-  - [ ] 2.3 Implementar comando !play en `commands/music.js`
+  - [x] 2.3 Implementar comando !play en `commands/music.js` ✅ COMPLETADO
     - Verificar que usuario esté en canal de voz
     - Validar query usando `validateMusicQuery()`
     - Llamar a `MusicManager.play()` con parámetros validados
     - Enviar mensajes de confirmación o error al canal de Discord
     - _Requerimientos: 5.1.1, 5.1.2, 5.1.3, 5.1.4, 5.1.8_
   
-  - [ ] 2.4 Implementar comando !stop en `commands/music.js`
+  - [x] 2.4 Implementar comando !stop en `commands/music.js` ✅ COMPLETADO
     - Verificar que usuario esté en el mismo canal de voz que la sesión activa
     - Llamar a `MusicManager.stop()`
     - Enviar mensaje de confirmación
     - _Requerimientos: 5.1.5, 5.1.6, 5.1.7_
 
 - [ ] 3. Implementar lógica de sesión única y bloqueo de canal
-  - [ ] 3.1 Implementar método `play()` en MusicManager
+  - [x] 3.1 Implementar método `play()` en MusicManager ⚠️ CON ERRORES - Ver CORRECCIÓN 3
     - Validar que no haya sesión activa (single instance)
     - Establecer bloqueo de canal (channelId, channelName)
     - Marcar sesión como activa (isActive = true)
