@@ -53,6 +53,8 @@ class MusicManager {
                 channelId: voiceChannelId,
                 guildId: guildId,
                 adapterCreator: guild.voiceAdapterCreator,
+                selfDeaf: false,
+                selfMute: false,
             });
             this.connection.subscribe(this.player);
 
