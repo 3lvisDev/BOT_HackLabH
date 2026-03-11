@@ -1,6 +1,6 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
 const { chromium } = require('playwright');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process'); // Added execSync
 const ffmpeg = require('ffmpeg-static');
 const db = require('../db');
 const { logMusicEvent } = require('./logger');
@@ -118,22 +118,49 @@ class MusicManager {
         this.currentTrack = await this.page.title();
     }
 
+    /**
+     * @private
+     * Inicia el puente de audio usando ffmpeg y el recurso de Discord.
+     */
     _startAudioBridge() {
         if (this.ffmpegProcess) this.ffmpegProcess.kill();
         
         logMusicEvent(this.guildId, 'debug', 'Iniciando puente de audio FFmpeg (PulseAudio)...');
+
+        // 1. Validar entorno PulseAudio (Observación Auditoría)
+        try {
+            execSync('pactl info', { stdio: 'ignore' });
+        } catch (e) {
+            logMusicEvent(this.guildId, 'warning', 'PulseAudio no detectado. Reintentando con configuración alternativa...');
+        }
         
-        this.ffmpegProcess = spawn(ffmpeg, [
+        const args = [
             '-f', 'pulse',
             '-i', 'default',
             '-ac', '2',
             '-ar', '48000',
             '-f', 's16le',
             'pipe:1'
-        ]);
+        ];
 
-        this.ffmpegProcess.on('error', err => {
-            logMusicEvent(this.guildId, 'error', `FFmpeg Process Error: ${err.message}`);
+        this.ffmpegProcess = spawn(ffmpeg, args);
+
+        // 2. Timeout de seguridad para el proceso (Observación Auditoría)
+        const timeout = setTimeout(() => {
+            if (this.ffmpegProcess) {
+                logMusicEvent(this.guildId, 'warning', 'FFmpeg timeout de inactividad (5 min), deteniendo...');
+                this.stop();
+            }
+        }, 5 * 60 * 1000); // 5 minutes
+
+        this.ffmpegProcess.on('error', (err) => {
+            logMusicEvent(this.guildId, 'error', `Error en FFmpeg: ${err.message}`);
+            clearTimeout(timeout);
+        });
+
+        this.ffmpegProcess.on('close', (code) => {
+            logMusicEvent(this.guildId, 'info', `FFmpeg cerrado con código: ${code}`);
+            clearTimeout(timeout);
         });
 
         const resource = createAudioResource(this.ffmpegProcess.stdout, {
