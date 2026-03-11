@@ -381,34 +381,28 @@
                             </div>
                         </div>
                         
-                        <div class="player-controls">
-                            <button class="player-btn primary" id="btn-music-play">
-                                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                            </button>
-                            <button class="player-btn danger" id="btn-music-stop">
-                                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><rect x="6" y="6" width="12" height="12"></rect></svg>
-                            </button>
-                        </div>
                     </div>
 
-                    <!-- Search & Setup Sidebar -->
+                    <!-- Setup Sidebar (Monitoring only, no search) -->
                     <div class="music-sidebar">
-                        <div class="glass-panel music-search-box">
-                            <h3>🔍 Buscar Música</h3>
-                            <div class="search-input-wrapper">
-                                <input type="text" id="music-search-input" placeholder="Nombre de canción o link de YouTube..." class="dark-input">
-                                <button id="btn-search-music" class="btn-primary">Buscar</button>
-                            </div>
-                        </div>
-
                         <div class="glass-panel premium-session-box">
                             <div class="box-header">
                                 <h3>💎 YouTube Premium</h3>
                                 <span class="badge-premium">Asociar Sesión</span>
                             </div>
-                            <p class="box-desc">Pega tus cookies de sesión para evitar anuncios y habilitar calidad alta.</p>
-                            <textarea id="yt-session-cookies" class="dark-input" rows="4" placeholder='[{"name": "SID", "value": "..."}, ...]'></textarea>
+                            <p class="box-desc">Pega tus cookies de sesión para evitar anuncios.</p>
+                            <textarea id="yt-session-cookies" class="dark-input" rows="3" placeholder='[{"name": "SID", "value": "..."}, ...]'></textarea>
                             <button id="btn-save-yt-session" class="btn-mini">Guardar Sesión</button>
+                        </div>
+
+                        <div class="glass-panel music-console-box">
+                            <div class="box-header">
+                                <h3>📜 Consola de Música</h3>
+                                <span class="badge-live">LIVE</span>
+                            </div>
+                            <div id="music-console-log" class="console-area">
+                                <div class="log-entry system">Conectando con el motor de audio...</div>
+                            </div>
                         </div>
                     </div>
                 </div>

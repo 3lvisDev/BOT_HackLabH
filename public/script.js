@@ -573,6 +573,62 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Music System Logic ---
+    // --- Music System Logic (Console & Monitoring) ---
+    const musicConsole = document.getElementById('music-console-log');
+
+    function addLogEntry(data) {
+        if (!musicConsole) return;
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${data.level || 'info'}`;
+        const time = new Date(data.timestamp || Date.now()).toLocaleTimeString();
+        entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-msg">${data.message}</span>`;
+        musicConsole.appendChild(entry);
+        musicConsole.scrollTop = musicConsole.scrollHeight;
+
+        // Limite de logs en el DOM
+        if (musicConsole.childNodes.length > 50) {
+            musicConsole.removeChild(musicConsole.firstChild);
+        }
+    }
+
+    let musicWS = null;
+    function connectMusicWS() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/music/logs`;
+        musicWS = new WebSocket(wsUrl);
+
+        musicWS.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'music:log') {
+                addLogEntry(data);
+            } else if (data.type === 'status') {
+                addLogEntry({ level: 'system', message: data.message });
+            }
+        };
+
+        musicWS.onclose = () => {
+            console.log('[MusicWS] Closed. Reconnecting in 5s...');
+            setTimeout(connectMusicWS, 5000);
+        };
+    }
+
+    // Cargar logs históricos al entrar
+    async function loadMusicLogs() {
+        try {
+            const res = await fetch('/api/music/logs');
+            if (res.ok) {
+                const logs = await res.json();
+                musicConsole.innerHTML = '';
+                logs.reverse().forEach(addLogEntry);
+            }
+        } catch (err) { console.error('Error loading music logs:', err); }
+    }
+
+    if (musicConsole) {
+        connectMusicWS();
+        loadMusicLogs();
+    }
+
     async function refreshMusicStatus() {
         try {
             const res = await fetch('/api/music/status');
@@ -605,32 +661,6 @@ document.addEventListener('DOMContentLoaded', () => {
             refreshMusicStatus();
         }
     }, 5000);
-
-    document.getElementById('btn-search-music')?.addEventListener('click', async () => {
-        const query = document.getElementById('music-search-input').value;
-        if (!query) return;
-
-        try {
-            const res = await fetch('/api/music/play', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query })
-            });
-            if (res.ok) {
-                refreshMusicStatus();
-            } else {
-                const err = await res.json();
-                alert(`Error: ${err.message || 'No se pudo iniciar la reproducción'}`);
-            }
-        } catch (err) { alert('Error al conectar con la API de música'); }
-    });
-
-    document.getElementById('btn-music-stop')?.addEventListener('click', async () => {
-        try {
-            const res = await fetch('/api/music/stop', { method: 'POST' });
-            if (res.ok) refreshMusicStatus();
-        } catch (err) { console.error(err); }
-    });
 
     document.getElementById('btn-save-yt-session')?.addEventListener('click', async () => {
         const cookies = document.getElementById('yt-session-cookies').value;

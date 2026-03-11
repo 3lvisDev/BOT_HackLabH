@@ -50,6 +50,14 @@ async function initDB() {
                     volume INTEGER DEFAULT 100,
                     last_channel_id TEXT
                 );
+                CREATE TABLE IF NOT EXISTS music_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    level TEXT,
+                    message TEXT,
+                    metadata TEXT
+                );
             `);
             return db;
         });
@@ -128,25 +136,78 @@ async function earnAchievement(userId, achievementId) {
     return db.run(`INSERT OR IGNORE INTO user_achievements (user_id, achievement_id) VALUES (?, ?)`, [userId, achievementId]);
 }
 
+const crypto = require('crypto');
+const algorithm = 'aes-256-cbc';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ? Buffer.from(process.env.ENCRYPTION_KEY, 'hex') : crypto.randomBytes(32);
+const IV_LENGTH = 16;
+
+function encrypt(text) {
+    if (!text) return null;
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipheriv(algorithm, ENCRYPTION_KEY, iv);
+    let encrypted = cipher.update(text);
+    encrypted = Buffer.concat([encrypted, cipher.final()]);
+    return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+function decrypt(text) {
+    if (!text) return null;
+    try {
+        const textParts = text.split(':');
+        const iv = Buffer.from(textParts.shift(), 'hex');
+        const encryptedText = Buffer.from(textParts.join(':'), 'hex');
+        const decipher = crypto.createDecipheriv(algorithm, ENCRYPTION_KEY, iv);
+        let decrypted = decipher.update(encryptedText);
+        decrypted = Buffer.concat([decrypted, decipher.final()]);
+        return decrypted.toString();
+    } catch (e) {
+        console.error("[DB] Decryption error:", e.message);
+        return null;
+    }
+}
+
 async function getMusicSettings(guildId) {
     const db = await initDB();
-    return db.get(`SELECT * FROM music_settings WHERE guild_id = ?`, [guildId]);
+    const row = await db.get(`SELECT * FROM music_settings WHERE guild_id = ?`, [guildId]);
+    if (row && row.yt_cookies) {
+        row.yt_cookies = decrypt(row.yt_cookies);
+    }
+    return row;
 }
 
 async function updateMusicSettings(guildId, settings) {
     const db = await initDB();
     const { yt_cookies, volume, last_channel_id } = settings;
+    const encryptedCookies = encrypt(yt_cookies);
+    
     await db.run(`INSERT INTO music_settings (guild_id, yt_cookies, volume, last_channel_id)
             VALUES (?, ?, ?, ?)
             ON CONFLICT(guild_id) DO UPDATE SET
             yt_cookies = excluded.yt_cookies,
             volume = excluded.volume,
             last_channel_id = excluded.last_channel_id`,
-    [guildId, yt_cookies, volume, last_channel_id]);
+    [guildId, encryptedCookies, volume, last_channel_id]);
+}
+
+async function logMusicEvent(guildId, level, message, metadata) {
+    const db = await initDB();
+    await db.run(
+        `INSERT INTO music_logs (guild_id, level, message, metadata) VALUES (?, ?, ?, ?)`,
+        [guildId, level, message, JSON.stringify(metadata)]
+    );
+}
+
+async function getMusicLogs(guildId, limit = 50) {
+    const db = await initDB();
+    return db.all(
+        `SELECT * FROM music_logs WHERE guild_id = ? ORDER BY timestamp DESC LIMIT ?`,
+        [guildId, limit]
+    );
 }
 
 module.exports = { 
     initDB, getGuildConfig, setGuildConfig, getSettings, updateSettings, 
     updateUserStats, getAllAchievements, createAchievement, getUserAchievements, earnAchievement,
-    getMusicSettings, updateMusicSettings
+    getMusicSettings, updateMusicSettings, logMusicEvent, getMusicLogs,
+    encrypt, decrypt
 };
