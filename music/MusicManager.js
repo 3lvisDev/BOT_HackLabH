@@ -3,6 +3,7 @@ const { chromium } = require('playwright');
 const { spawn } = require('child_process');
 const ffmpeg = require('ffmpeg-static');
 const db = require('../db');
+const { logMusicEvent } = require('./logger');
 
 class MusicManager {
     constructor(client) {
@@ -20,15 +21,17 @@ class MusicManager {
 
         // Player Event Listeners
         this.player.on(AudioPlayerStatus.Idle, () => {
-            console.log('[Music] Player idle. Cleaning up...');
+            logMusicEvent(this.guildId, 'info', 'Reproducción finalizada (Idle).');
             this.stop();
         });
-        this.player.on('error', error => console.error('[Music] Player Error:', error.message));
+        this.player.on('error', error => {
+            logMusicEvent(this.guildId, 'error', `Error en el reproductor: ${error.message}`);
+        });
     }
 
     async play(guildId, voiceChannelId, query) {
         if (this.isActive) {
-            await this.stop(); // Preemptive stop if active to restart cleanly
+            throw new Error(`Ya hay una reproducción activa en el canal: ${this.channelName}`);
         }
 
         const guild = this.client.guilds.cache.get(guildId);
@@ -42,6 +45,8 @@ class MusicManager {
         this.channelId = voiceChannelId;
         this.channelName = voiceChannel.name;
         
+        logMusicEvent(guildId, 'info', `Iniciando sesión en canal: ${this.channelName}`, { query });
+
         try {
             // 1. Join voice channel
             this.connection = joinVoiceChannel({
@@ -51,62 +56,12 @@ class MusicManager {
             });
             this.connection.subscribe(this.player);
 
-            // 2. Launch Browser
-            this.browser = await chromium.launch({ 
-                headless: true,
-                args: ['--nogpu', '--no-sandbox', '--disable-setuid-sandbox']
-            });
-            const context = await this.browser.newContext();
-            
-            // 3. Apply Cookies if available
-            const settings = await db.getMusicSettings(guildId);
-            if (settings && settings.yt_cookies) {
-                try {
-                    const cookies = JSON.parse(settings.yt_cookies);
-                    await context.addCookies(cookies);
-                    console.log("[Music] Cookies de sesión aplicadas.");
-                } catch (e) {
-                    console.error("[Music] Error parsing cookies:", e.message);
-                }
-            }
+            // 2. Process Pipeline
+            await this._launchBrowser(guildId);
+            await this._navigateToYouTube(query);
+            this._startAudioBridge();
 
-            this.page = await context.newPage();
-            
-            // 4. Navigate to YouTube
-            let url = query;
-            if (!query.startsWith('http')) {
-                url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-            }
-            
-            await this.page.goto(url);
-            
-            // Si es búsqueda, click en el primer video
-            if (url.includes('search_query')) {
-                await this.page.waitForSelector('ytd-video-renderer #video-title');
-                await this.page.click('ytd-video-renderer #video-title');
-            }
-
-            await this.page.waitForSelector('video');
-            this.currentTrack = await this.page.title();
-            
-            // 5. Start Audio Capture (PulseAudio bridge)
-            // En Docker/Debian usamos PulseAudio
-            this.ffmpegProcess = spawn(ffmpeg, [
-                '-f', 'pulse',
-                '-i', 'default',
-                '-ac', '2',
-                '-ar', '48000',
-                '-f', 's16le',
-                'pipe:1'
-            ]);
-
-            const resource = createAudioResource(this.ffmpegProcess.stdout, {
-                inputType: StreamType.Raw,
-                inlineVolume: true
-            });
-            
-            this.player.play(resource);
-            console.log(`[Music] Reproduciendo: ${this.currentTrack}`);
+            logMusicEvent(guildId, 'info', `Reproduciendo ahora: ${this.currentTrack}`);
 
             return {
                 title: this.currentTrack,
@@ -114,13 +69,83 @@ class MusicManager {
             };
 
         } catch (err) {
-            console.error('[Music] Error fatal:', err);
+            logMusicEvent(guildId, 'error', `Error fatal en play(): ${err.message}`);
             await this.stop();
             throw err;
         }
     }
 
+    async _launchBrowser(guildId) {
+        logMusicEvent(guildId, 'debug', 'Lanzando navegador Chromium...');
+        this.browser = await chromium.launch({ 
+            headless: true,
+            args: ['--nogpu', '--no-sandbox', '--disable-setuid-sandbox']
+        });
+        const context = await this.browser.newContext();
+        
+        const settings = await db.getMusicSettings(guildId);
+        if (settings && settings.yt_cookies) {
+            try {
+                const cookies = JSON.parse(settings.yt_cookies);
+                await context.addCookies(cookies);
+                logMusicEvent(guildId, 'info', 'Sesión de YouTube Premium aplicada desde cookies.');
+            } catch (e) {
+                logMusicEvent(guildId, 'warning', `Error al aplicar cookies: ${e.message}`);
+            }
+        }
+        this.page = await context.newPage();
+    }
+
+    async _navigateToYouTube(query) {
+        if (!this.page) throw new Error("Navegador no inicializado.");
+        
+        let url = query;
+        if (!query.startsWith('http')) {
+            url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+            logMusicEvent(this.guildId, 'debug', `Buscando en YouTube: ${query}`);
+        } else {
+            logMusicEvent(this.guildId, 'debug', `Navegando a URL directa: ${query}`);
+        }
+        
+        await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        
+        if (url.includes('search_query')) {
+            await this.page.waitForSelector('ytd-video-renderer #video-title', { timeout: 10000 });
+            await this.page.click('ytd-video-renderer #video-title');
+        }
+
+        await this.page.waitForSelector('video', { timeout: 15000 });
+        this.currentTrack = await this.page.title();
+    }
+
+    _startAudioBridge() {
+        if (this.ffmpegProcess) this.ffmpegProcess.kill();
+        
+        logMusicEvent(this.guildId, 'debug', 'Iniciando puente de audio FFmpeg (PulseAudio)...');
+        
+        this.ffmpegProcess = spawn(ffmpeg, [
+            '-f', 'pulse',
+            '-i', 'default',
+            '-ac', '2',
+            '-ar', '48000',
+            '-f', 's16le',
+            'pipe:1'
+        ]);
+
+        this.ffmpegProcess.on('error', err => {
+            logMusicEvent(this.guildId, 'error', `FFmpeg Process Error: ${err.message}`);
+        });
+
+        const resource = createAudioResource(this.ffmpegProcess.stdout, {
+            inputType: StreamType.Raw,
+            inlineVolume: true
+        });
+        
+        this.player.play(resource);
+    }
+
     async stop() {
+        logMusicEvent(this.guildId, 'info', 'Deteniendo sesión y limpiando recursos.');
         if (this.ffmpegProcess) this.ffmpegProcess.kill();
         if (this.browser) await this.browser.close();
         if (this.connection) this.connection.destroy();

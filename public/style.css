@@ -1147,3 +1147,55 @@ input:checked + .slider:before { transform: translateX(20px); }
         grid-template-columns: 1fr;
     }
 }
+
+/* Music Console Styles */
+.music-console-box {
+    margin-top: 20px;
+    height: 300px;
+    display: flex;
+    flex-direction: column;
+}
+
+.console-area {
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+    padding: 10px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.85rem;
+    overflow-y: auto;
+    flex: 1;
+    margin-top: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.log-entry {
+    margin-bottom: 4px;
+    line-height: 1.4;
+}
+
+.log-entry.info { color: #88ff88; }
+.log-entry.error { color: #ff8888; }
+.log-entry.warning { color: #ffff88; }
+.log-entry.debug { color: #8888ff; }
+.log-entry.system { color: #88ffff; font-style: italic; }
+
+.log-time {
+    color: rgba(255, 255, 255, 0.4);
+    margin-right: 8px;
+}
+
+.badge-live {
+    background: #ff4757;
+    color: white;
+    font-size: 0.6rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}

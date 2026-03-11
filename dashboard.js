@@ -280,43 +280,27 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
       } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  // --- Music System Routes ---
+  // Dashboard is read-only for music status
   app.get('/api/music/status', authMiddleware, (req, res) => {
       res.json(musicManager.getStatus());
   });
 
-  app.post('/api/music/play', authMiddleware, async (req, res) => {
+  app.get('/api/music/logs', authMiddleware, async (req, res) => {
       try {
-          const { query } = req.body;
           const guild = discordClient.guilds.cache.first();
-          
-          // Buscar si el admin está en un canal de voz
-          const member = await guild.members.fetch(req.session.user.id);
-          let channelId = member.voice.channelId;
-          
-          if (!channelId) {
-              const settings = await db.getMusicSettings(guild.id);
-              channelId = settings?.last_channel_id || guild.channels.cache.find(c => c.type === 2)?.id;
-          }
-          
-          if (!channelId) return res.status(400).json({ message: "No se encontró canal de voz. Únete a uno primero." });
-          
-          await musicManager.play(guild.id, channelId, query);
-          res.json({ success: true });
-      } catch (err) { res.status(500).json({ message: err.message }); }
+          const logs = await db.getMusicLogs(guild.id);
+          res.json(logs);
+      } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  app.post('/api/music/stop', authMiddleware, async (req, res) => {
-      await musicManager.stop();
-      res.json({ success: true });
-  });
-
+  const { validateYouTubeCookies } = require('./music/validation');
   app.post('/api/music/session', authMiddleware, async (req, res) => {
       try {
+          const cookies = validateYouTubeCookies(req.body.cookies);
           const guild = discordClient.guilds.cache.first();
-          await db.updateMusicSettings(guild.id, { yt_cookies: req.body.cookies });
+          await db.updateMusicSettings(guild.id, { yt_cookies: JSON.stringify(cookies) });
           res.json({ success: true });
-      } catch (err) { res.status(500).json({ error: err.message }); }
+      } catch (err) { res.status(400).json({ error: err.message }); }
   });
 
   app.post('/api/setup', authMiddleware, strictLimiter, async (req, res) => {
@@ -334,7 +318,18 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
     res.end();
   });
 
-  app.listen(PORT, () => console.log(`🌐 Dashboard en puerto ${PORT}`));
+  const server = app.listen(PORT, () => console.log(`🌐 Dashboard en puerto ${PORT}`));
+
+  // WebSocket for Real-time Music Logs
+  const { WebSocketServer } = require('ws');
+  const wss = new WebSocketServer({ server, path: '/ws/music/logs' });
+  const { setSocketServer } = require('./music/logger');
+  setSocketServer(wss);
+
+  wss.on('connection', (ws) => {
+      console.log('[WS] Nueva conexión para logs de música.');
+      ws.send(JSON.stringify({ type: 'status', message: 'Conectado a la consola de música' }));
+  });
 }
 
 module.exports = { startDashboard };
