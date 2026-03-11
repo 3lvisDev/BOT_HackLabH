@@ -79,11 +79,47 @@ class MusicManager {
 
     async _launchBrowser(guildId) {
         logMusicEvent(guildId, 'debug', 'Lanzando navegador Chromium...');
+        
+        // Crear sink virtual de PulseAudio para audio aislado
+        const virtualSinkName = `discord_music_${guildId}`;
+        try {
+            // Eliminar sink anterior si existe
+            try {
+                execSync(`pactl unload-module module-null-sink sink_name=${virtualSinkName}`, { stdio: 'ignore' });
+            } catch (e) {
+                // Ignorar si no existe
+            }
+            
+            // Crear nuevo sink virtual
+            execSync(`pactl load-module module-null-sink sink_name=${virtualSinkName} sink_properties=device.description="Discord_Music_Bot"`, { stdio: 'pipe' });
+            logMusicEvent(guildId, 'info', `Sink virtual creado: ${virtualSinkName}`);
+            this.virtualSinkName = virtualSinkName;
+        } catch (e) {
+            logMusicEvent(guildId, 'error', `Error creando sink virtual: ${e.message}`);
+            throw new Error('No se pudo crear sink virtual de PulseAudio');
+        }
+        
+        // Configurar variable de entorno para que Chromium use el sink virtual
+        const env = {
+            ...process.env,
+            PULSE_SINK: virtualSinkName
+        };
+        
         this.browser = await chromium.launch({ 
             headless: true,
-            args: ['--nogpu', '--no-sandbox', '--disable-setuid-sandbox']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--autoplay-policy=no-user-gesture-required',
+                '--disable-blink-features=AutomationControlled'
+            ],
+            env: env
         });
-        const context = await this.browser.newContext();
+        
+        const context = await this.browser.newContext({
+            permissions: ['audio-capture', 'video-capture']
+        });
         
         const settings = await db.getMusicSettings(guildId);
         if (settings && settings.yt_cookies) {
@@ -96,6 +132,61 @@ class MusicManager {
             }
         }
         this.page = await context.newPage();
+
+        // 3. Detectar y mover el sink-input (Bugfix Aislamiento) - Await para asegurar redirección
+        await this._redirectAudioStream();
+    }
+
+    /**
+     * @private
+     * Busca el stream de audio de Chromium y lo mueve al sink virtual.
+     */
+    async _redirectAudioStream() {
+        const guildId = this.guildId;
+        const virtualSinkName = this.virtualSinkName;
+        
+        logMusicEvent(guildId, 'debug', 'Iniciando polling para detectar stream de Chromium...');
+
+        let detectedSinkInput = null;
+        const maxAttempts = 20; // 10 segundos total (500ms * 20)
+        
+        for (let i = 0; i < maxAttempts; i++) {
+            try {
+                // Listar todos los sink-inputs y buscar el que pertenece a Chromium/Playwright
+                const output = execSync('pactl list short sink-inputs').toString();
+                const lines = output.split('\n');
+                
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    
+                    // Formato corto: "ID SINK SAMPLE_SPEC ..."
+                    const parts = line.split('\t');
+                    const id = parts[0];
+                    
+                    // Obtener detalles del sink-input para verificar si es el correcto
+                    const details = execSync(`pactl list sink-inputs`).toString();
+                    // Buscamos el bloque que contiene este ID y "chromium" o "playwright"
+                    if (details.includes(`Sink Input #${id}`) && 
+                       (details.toLowerCase().includes('chromium') || details.toLowerCase().includes('playwright'))) {
+                        detectedSinkInput = id;
+                        break;
+                    }
+                }
+
+                if (detectedSinkInput) {
+                    logMusicEvent(guildId, 'info', `Stream detectado (ID: ${detectedSinkInput}). Moviendo a ${virtualSinkName}...`);
+                    execSync(`pactl move-sink-input ${detectedSinkInput} ${virtualSinkName}`);
+                    logMusicEvent(guildId, 'info', 'Redirección de audio exitosa.');
+                    return;
+                }
+            } catch (e) {
+                logMusicEvent(guildId, 'debug', `Intento ${i+1} de detección fallido: ${e.message}`);
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        logMusicEvent(guildId, 'warning', 'No se pudo detectar el stream de audio de Chromium para redirección forzada.');
     }
 
     async _navigateToYouTube(query) {
@@ -116,8 +207,29 @@ class MusicManager {
             await this.page.click('ytd-video-renderer #video-title');
         }
 
+        // Esperar a que el video esté listo
         await this.page.waitForSelector('video', { timeout: 15000 });
+        
+        // Obtener título
         this.currentTrack = await this.page.title();
+        
+        // Forzar reproducción del video
+        await this.page.evaluate(() => {
+            const video = document.querySelector('video');
+            if (video) {
+                video.muted = false;
+                video.volume = 1.0;
+                video.play().catch(e => console.error('Error al reproducir:', e));
+            }
+        });
+        
+        // RE-EJECUTAR Redirección si es necesario (a veces Chromium crea un nuevo stream al empezar el video)
+        await this._redirectAudioStream();
+        
+        // Esperar un momento para que el audio comience
+        await this.page.waitForTimeout(2000);
+        
+        logMusicEvent(this.guildId, 'debug', `Video cargado y reproducción iniciada: ${this.currentTrack}`);
     }
 
     /**
@@ -129,35 +241,53 @@ class MusicManager {
         
         logMusicEvent(this.guildId, 'debug', 'Iniciando puente de audio FFmpeg (PulseAudio)...');
 
-        // 1. Validar entorno PulseAudio (Observación Auditoría)
+        // Validar entorno PulseAudio
         try {
             execSync('pactl info', { stdio: 'ignore' });
         } catch (e) {
-            logMusicEvent(this.guildId, 'warning', 'PulseAudio no detectado. Reintentando con configuración alternativa...');
+            throw new Error('PulseAudio no está disponible en el sistema');
         }
+        
+        // Usar el monitor del sink virtual que creamos
+        const audioSource = `${this.virtualSinkName}.monitor`;
+        
+        // Verificar si el sink virtual está recibiendo audio (State: RUNNING)
+        try {
+            const sinkInfo = execSync(`pactl list sinks`).toString();
+            if (!sinkInfo.includes(this.virtualSinkName)) {
+                throw new Error('Sink virtual no encontrado en pactl');
+            }
+        } catch (e) {
+            logMusicEvent(this.guildId, 'warning', `No se pudo verificar el estado del sink: ${e.message}`);
+        }
+
+        logMusicEvent(this.guildId, 'info', `Capturando audio desde: ${audioSource}`);
         
         const args = [
             '-f', 'pulse',
-            '-i', 'default',
+            '-i', audioSource,
             '-ac', '2',
             '-ar', '48000',
             '-f', 's16le',
+            '-loglevel', 'error',
             'pipe:1'
         ];
 
+        logMusicEvent(this.guildId, 'debug', `FFmpeg args: ${args.join(' ')}`);
         this.ffmpegProcess = spawn(ffmpeg, args);
 
-        // 2. Timeout de seguridad para el proceso (Observación Auditoría)
+        // Timeout de seguridad
         const timeout = setTimeout(() => {
             if (this.ffmpegProcess) {
                 logMusicEvent(this.guildId, 'warning', 'FFmpeg timeout de inactividad (5 min), deteniendo...');
                 this.stop();
             }
-        }, 5 * 60 * 1000); // 5 minutes
+        }, 5 * 60 * 1000);
 
         this.ffmpegProcess.on('error', (err) => {
             logMusicEvent(this.guildId, 'error', `Error en FFmpeg: ${err.message}`);
             clearTimeout(timeout);
+            this.stop();
         });
 
         this.ffmpegProcess.on('close', (code) => {
@@ -165,12 +295,23 @@ class MusicManager {
             clearTimeout(timeout);
         });
 
+        // Log stderr para debugging
+        this.ffmpegProcess.stderr.on('data', (data) => {
+            const msg = data.toString().trim();
+            if (msg) {
+                logMusicEvent(this.guildId, 'debug', `FFmpeg stderr: ${msg}`);
+            }
+        });
+
         const resource = createAudioResource(this.ffmpegProcess.stdout, {
             inputType: StreamType.Raw,
             inlineVolume: true
         });
         
+        resource.volume.setVolume(1.0);
         this.player.play(resource);
+        
+        logMusicEvent(this.guildId, 'info', 'Audio bridge iniciado y reproductor conectado');
     }
 
     async stop() {
