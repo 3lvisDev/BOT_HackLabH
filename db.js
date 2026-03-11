@@ -44,6 +44,12 @@ async function initDB() {
                     earned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (user_id, achievement_id)
                 );
+                CREATE TABLE IF NOT EXISTS music_settings (
+                    guild_id TEXT PRIMARY KEY,
+                    yt_cookies TEXT,
+                    volume INTEGER DEFAULT 100,
+                    last_channel_id TEXT
+                );
             `);
             return db;
         });
@@ -122,4 +128,25 @@ async function earnAchievement(userId, achievementId) {
     return db.run(`INSERT OR IGNORE INTO user_achievements (user_id, achievement_id) VALUES (?, ?)`, [userId, achievementId]);
 }
 
-module.exports = { initDB, getGuildConfig, setGuildConfig, getSettings, updateSettings, updateUserStats, getAllAchievements, createAchievement, getUserAchievements, earnAchievement };
+async function getMusicSettings(guildId) {
+    const db = await initDB();
+    return db.get(`SELECT * FROM music_settings WHERE guild_id = ?`, [guildId]);
+}
+
+async function updateMusicSettings(guildId, settings) {
+    const db = await initDB();
+    const { yt_cookies, volume, last_channel_id } = settings;
+    await db.run(`INSERT INTO music_settings (guild_id, yt_cookies, volume, last_channel_id)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET
+            yt_cookies = excluded.yt_cookies,
+            volume = excluded.volume,
+            last_channel_id = excluded.last_channel_id`,
+    [guildId, yt_cookies, volume, last_channel_id]);
+}
+
+module.exports = { 
+    initDB, getGuildConfig, setGuildConfig, getSettings, updateSettings, 
+    updateUserStats, getAllAchievements, createAchievement, getUserAchievements, earnAchievement,
+    getMusicSettings, updateMusicSettings
+};
