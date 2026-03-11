@@ -1,66 +1,291 @@
-# Configuración de Bot de Discord para Comunidad de Programación
+# 🤖 Bot de Discord HackLab - Comunidad de Programación
 
-Este proyecto contiene un bot desarrollado en Node.js que configura un servidor de Discord para una comunidad de programación con un solo comando.
+Bot completo desarrollado en Node.js para gestionar servidores de Discord enfocados en comunidades de programación, con sistema de música, logros, dashboard web premium y más.
 
-## Características
+## ✨ Características Principales
 
-- Revoca automáticamente los permisos de administrador del rol `@everyone` y ajusta permisos básicos.
-- Crea el rol `Admin` y asigna este rol **únicamente** a los 3 usuarios que especifiques en las variables de entorno, otorgándoles permiso total.
-- Crea el rol `Desarrollador` para miembros generales.
-- Al unirse un nuevo miembro al servidor, se le asigna el rol de `Desarrollador` automáticamente.
-- Crea una jerarquía de canales enfocada a desarrolladores (`#general`, `#ayuda-codigo`, `#proyectos-showcase` y una sala de voz).
+### 🎵 Sistema de Música con YouTube Premium
+- Reproduce audio de YouTube en canales de voz usando navegador virtual (Playwright + Chromium)
+- Soporte para YouTube Premium (sin anuncios)
+- Comandos: `!play <búsqueda o URL>` y `!stop`
+- Dashboard web para configurar cookies de YouTube Premium
+- Logs en tiempo real con WebSocket
+- Encriptación AES-256-CBC para cookies
+- Validación de inputs y sanitización contra XSS
 
-## Requisitos Previos
+### 🏆 Sistema de Logros
+- Logros automáticos por actividad en el servidor
+- Persistencia en base de datos SQLite
+- Visualización en dashboard web
 
-Antes de ejecutar el bot, necesitas:
-1. Tener [Node.js](https://nodejs.org/) instalado en tu sistema.
-2. Contar con el Token de tu bot de Discord (genéralo en el [Portal de Desarrolladores de Discord](https://discord.com/developers/applications)).
-3. Asegurarte de que el bot tenga el **Permiso de Administrador** (`Administrator`) al ser invitado al servidor para que pueda gestionar los roles y canales.
-4. Habilitar los "Privileged Gateway Intents" (`Server Members Intent` y `Message Content Intent`) en la página del bot en el portal de desarrolladores.
+### 🎨 Dashboard Web Premium
+- Diseño moderno con glassmorphism
+- Temas premium: Obsidian, Crystal, Midnight
+- Monitoreo en tiempo real del bot
+- Configuración de música y cookies YT Premium
+- Consola de logs en vivo
+- Autenticación segura con sesiones
 
-## Instalación y Configuración
+### 🔐 Gestión de Servidor
+- Configuración automática de roles (`Admin`, `Desarrollador`)
+- Asignación automática de roles a nuevos miembros
+- Creación de canales enfocados a desarrolladores
+- Mensajes de bienvenida y despedida personalizables
+- Permisos granulares y seguros
 
-1. Abre esta carpeta en tu terminal.
-2. Renombra el archivo `.env.example` a `.env` (si aún no lo has hecho) y completa la información fundamental:
-   ```
-   DISCORD_TOKEN=tu_token_aqui
-   PORT=3000
-   WEB_ADMIN_PASSWORD=hacklab_secreto
-   ```
-   *Nota: ¡Ya no necesitas buscar IDs interminables de antemano! El bot buscará automáticamente el servidor.*
-3. Instala las dependencias necesarias:
-   ```bash
-   npm install
-   ```
-4. Inicia el bot con:
-   ```bash
-   npm start
-   ```
+### 🛡️ Seguridad
+- Rate limiting en endpoints críticos
+- Sanitización de inputs contra XSS
+- Cookies de sesión seguras (httpOnly, secure, sameSite)
+- CORS configurado correctamente
+- Encriptación de datos sensibles
+- Property-based testing para validación de invariantes
 
-## Ejecución con Docker (Recomendado)
+## 📋 Requisitos Previos
 
-Si prefieres no instalar Node.js en tu máquina, ¡puedes usar Docker! 🐋
+### Software Necesario:
+- [Node.js](https://nodejs.org/) v16+ (o Docker como alternativa)
+- [FFmpeg](https://ffmpeg.org/) (para sistema de música)
+- PulseAudio (para captura de audio en Linux/Docker)
 
-1. Asegúrate de tener **Docker** y **Docker Desktop** instalados.
-2. Abre la terminal en esta carpeta (`C:\BOT_HackLabH`).
-3. Construye la imagen del bot:
-   ```bash
-   docker build -t discord-bot-hacklab .
-   ```
-4. Ejecuta el contenedor (asegúrate de que el archivo `.env` esté listo con tu token):
-   ```bash
-   docker run -d -p 3000:3000 --env-file .env --name mi-bot hacklab discord-bot-hacklab
-   ```
-   *(Esto iniciará el bot en segundo plano y conectará el panel web al puerto 3000 de tu PC).*
+### Configuración de Discord:
+1. Token del bot desde el [Portal de Desarrolladores de Discord](https://discord.com/developers/applications)
+2. Permisos requeridos al invitar el bot:
+   - `Administrator` (para gestión completa)
+   - `Connect` y `Speak` (para canales de voz)
+3. Privileged Gateway Intents habilitados:
+   - `Server Members Intent`
+   - `Message Content Intent`
+   - `Presence Intent`
 
-## Uso del Panel Web
+## ⚙️ Instalación y Configuración
 
-¡El bot ahora incluye un moderno Panel de Administración Web!
+### 1. Clonar y Configurar
 
-1. Invita el bot a tu servidor asegurándote de darle el permiso de Administrador.
-2. Tu terminal te mostrará un enlace (ej. `http://localhost:3000`). Bre en tu navegador.
-3. Inicia sesión con la contraseña que pusiste en `WEB_ADMIN_PASSWORD` (por defecto `hacklab_secreto`).
-4. Desde el hermoso dashboard con diseño "Glassmorphism" podrás ver las estadísticas en vivo de tu bot.
-5. Haz clic en **"Iniciar Configuración Automática"** y verás en tiempo real en la terminal web cómo se crean los roles de Administrador, Desarrollador, y todos los canales del servidor de forma instantánea.
+```bash
+git clone <repository-url>
+cd BOT_HackLabH
+```
 
-*(Si prefieres no usar la web, aún puedes escribir `!setup_community` dentro de cualquier canal del servidor)*.
+### 2. Configurar Variables de Entorno
+
+Renombra `.env.example` a `.env` y completa:
+
+```env
+# Discord Bot
+DISCORD_TOKEN=tu_token_aqui
+
+# Web Dashboard
+PORT=3000
+WEB_ADMIN_PASSWORD=tu_password_seguro
+SESSION_SECRET=genera_un_secret_aleatorio
+
+# Seguridad (Música)
+ENCRYPTION_KEY=genera_32_bytes_hex
+# Generar con: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+```
+
+### 3. Instalar Dependencias
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+### 4. Iniciar el Bot
+
+```bash
+npm start
+```
+
+## 🐋 Ejecución con Docker (Recomendado)
+
+### Construcción de la Imagen
+
+```bash
+docker build -t discord-bot-hacklab .
+```
+
+### Ejecutar el Contenedor
+
+```bash
+docker run -d \
+  -p 3000:3000 \
+  --env-file .env \
+  --name mi-hacklab-bot \
+  discord-bot-hacklab
+```
+
+### Comandos Útiles
+
+```bash
+# Ver logs en tiempo real
+docker logs -f mi-hacklab-bot
+
+# Reiniciar el bot
+docker restart mi-hacklab-bot
+
+# Detener el bot
+docker stop mi-hacklab-bot
+
+# Eliminar el contenedor
+docker rm mi-hacklab-bot
+```
+
+## 🎮 Uso del Bot
+
+### Comandos de Discord
+
+#### Sistema de Música
+```
+!play <búsqueda o URL>  - Reproduce música de YouTube
+!stop                   - Detiene la reproducción actual
+```
+
+#### Gestión de Servidor
+```
+!setup_community  - Configura automáticamente el servidor
+```
+
+### Panel Web de Administración
+
+1. Accede a `http://localhost:3000` (o tu dominio configurado)
+2. Inicia sesión con `WEB_ADMIN_PASSWORD`
+3. Funcionalidades disponibles:
+   - 📊 Dashboard con estadísticas en tiempo real
+   - 🎵 Configuración de cookies YouTube Premium
+   - 📝 Consola de logs en vivo con WebSocket
+   - 🏆 Visualización de logros del servidor
+   - 🎨 Selector de temas premium (Obsidian, Crystal, Midnight)
+   - ⚙️ Configuración de mensajes de bienvenida/despedida
+
+### Configurar YouTube Premium (Opcional)
+
+Para reproducir música sin anuncios:
+
+1. Accede al dashboard web
+2. Ve a la sección "Música"
+3. Exporta las cookies de tu cuenta YouTube Premium usando una extensión como [EditThisCookie](https://chrome.google.com/webstore/detail/editthiscookie/)
+4. Pega el JSON de cookies en el formulario
+5. Las cookies se encriptarán automáticamente con AES-256-CBC
+
+
+## 🧪 Testing
+
+### Ejecutar Tests
+
+```bash
+# Todos los tests
+node tests/run-tests.js
+
+# Tests específicos
+node tests/bugfix-welcome-goodbye.test.js
+node tests/music_properties.test.js
+node tests/preservation.test.js
+```
+
+### Property-Based Testing
+
+El proyecto incluye tests basados en propiedades usando `fast-check` para validar invariantes del sistema:
+
+- Validación de queries de música
+- Encriptación/desencriptación de cookies
+- Estructura de cookies de YouTube
+- Sanitización de inputs
+- Invariantes de sesión única
+
+## 📁 Estructura del Proyecto
+
+```
+BOT_HackLabH/
+├── commands/           # Comandos de Discord
+│   └── music.js       # Comandos de música
+├── music/             # Sistema de música
+│   ├── MusicManager.js    # Gestor principal
+│   ├── validation.js      # Validación de inputs
+│   └── logger.js          # Sistema de logging
+├── public/            # Frontend del dashboard
+│   ├── index.html     # Dashboard principal
+│   ├── script.js      # Lógica del cliente
+│   ├── sanitize.js    # Sanitización XSS
+│   └── style.css      # Estilos premium
+├── tests/             # Suite de tests
+│   ├── music_properties.test.js
+│   ├── bugfix-welcome-goodbye.test.js
+│   └── preservation.test.js
+├── .kiro/specs/       # Especificaciones técnicas
+│   ├── youtube-premium-music-system/
+│   ├── xss-dashboard-sanitization/
+│   └── welcome-goodbye-messages-crash-fix/
+├── index.js           # Bot principal de Discord
+├── dashboard.js       # Servidor web Express
+├── db.js              # Gestión de base de datos SQLite
+├── SECURITY.md        # Documentación de seguridad
+└── README.md          # Este archivo
+```
+
+## 🔒 Seguridad
+
+Este proyecto implementa múltiples capas de seguridad:
+
+- ✅ Encriptación AES-256-CBC para datos sensibles
+- ✅ Sanitización de inputs contra XSS
+- ✅ Rate limiting en endpoints críticos
+- ✅ Cookies de sesión seguras (httpOnly, secure, sameSite)
+- ✅ CORS configurado correctamente
+- ✅ Validación de inputs con property-based testing
+- ✅ Manejo seguro de errores sin exponer información sensible
+
+Ver [SECURITY.md](SECURITY.md) para más detalles.
+
+## 📊 Auditorías y Revisiones
+
+El proyecto ha pasado por múltiples auditorías de código y seguridad:
+
+- **Primera Auditoría:** Identificó 5 errores críticos (ver `.kiro/specs/youtube-premium-music-system/REVIEW_REPORT.md`)
+- **Segunda Auditoría:** ✅ APROBADO - Todos los errores corregidos (ver `.kiro/specs/youtube-premium-music-system/AUDIT_2_REPORT.md`)
+- **Progreso:** 25% → 75% (+50%)
+- **Vulnerabilidades resueltas:** CWE-312, CWE-20
+
+## 🛠️ Tecnologías Utilizadas
+
+- **Backend:** Node.js, Discord.js, Express
+- **Base de Datos:** SQLite3
+- **Música:** Playwright, Chromium, FFmpeg, PulseAudio, @discordjs/voice
+- **Frontend:** HTML5, CSS3 (Glassmorphism), JavaScript (Vanilla)
+- **Seguridad:** crypto (Node.js), express-rate-limit, helmet
+- **Testing:** fast-check (property-based testing)
+- **Containerización:** Docker
+
+## 🤝 Contribuir
+
+Las contribuciones son bienvenidas. Por favor:
+
+1. Fork el proyecto
+2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
+3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abre un Pull Request
+
+## 📝 Licencia
+
+Este proyecto está bajo la licencia MIT. Ver archivo `LICENSE` para más detalles.
+
+## 👥 Autores
+
+- **HackLab Community** - Desarrollo y mantenimiento
+
+## 🙏 Agradecimientos
+
+- Comunidad de Discord.js
+- Playwright Team
+- fast-check para property-based testing
+- Todos los contribuidores del proyecto
+
+---
+
+**Nota:** Este bot está en desarrollo activo. Algunas características pueden estar en fase beta. Reporta cualquier bug en la sección de Issues.
