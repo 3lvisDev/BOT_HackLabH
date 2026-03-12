@@ -15,9 +15,12 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
   const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
   const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || `http://localhost:${PORT}/api/auth/callback`;
 
-  // Configurar CORS de forma segura
+  // Configurar CORS dinámico para permitir la IP local de la Raspberry Pi
   const corsOptions = {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: function (origin, callback) {
+      // Permitir todo transitoriamente en configuración de red local sin SSL
+      callback(null, true);
+    },
     credentials: true,
     optionsSuccessStatus: 200
   };
@@ -76,12 +79,12 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
     }
   };
 
-  // --- OAUTH2 DISCORD ROUTES ---
   app.get('/api/auth/discord', authLimiter, (req, res) => {
-    if (!DISCORD_CLIENT_ID || !DISCORD_REDIRECT_URI) {
-        return res.status(500).send("Las variables DISCORD_CLIENT_ID o DISCORD_REDIRECT_URI no están configuradas en .env");
+    if (!DISCORD_CLIENT_ID) {
+        return res.status(500).send("La variable DISCORD_CLIENT_ID no está configurada en .env");
     }
-    const url = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}&response_type=code&scope=identify`;
+    const redirectUri = process.env.DISCORD_REDIRECT_URI || `http://${req.get('host')}/api/auth/callback`;
+    const url = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=identify`;
     res.redirect(url);
   });
 
@@ -90,12 +93,13 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
     if (!code) return res.send("No se proporcionó un código OAuth.");
 
     try {
+      const redirectUri = process.env.DISCORD_REDIRECT_URI || `http://${req.get('host')}/api/auth/callback`;
       const params = new URLSearchParams();
       params.append('client_id', DISCORD_CLIENT_ID);
       params.append('client_secret', DISCORD_CLIENT_SECRET);
       params.append('grant_type', 'authorization_code');
       params.append('code', code);
-      params.append('redirect_uri', DISCORD_REDIRECT_URI);
+      params.append('redirect_uri', redirectUri);
 
       const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', params, {
         headers: {
@@ -318,7 +322,14 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
     res.end();
   });
 
-  const server = app.listen(PORT, () => console.log(`🌐 Dashboard en puerto ${PORT}`));
+  const server = app.listen(PORT, '0.0.0.0', () => console.log(`🌐 Dashboard en puerto ${PORT}`)).on('error', (err) => {
+    console.error(`\n❌ Error al iniciar Dashboard en puerto ${PORT}: ${err.message}`);
+    if (err.code === 'EADDRINUSE') {
+      console.error(`El puerto ${PORT} ya está en uso. Intenta con otro puerto:`);
+      console.error(`  docker run -e PORT=3001 ...\n`);
+    }
+    process.exit(1);
+  });
 
   // WebSocket for Real-time Music Logs
   const { WebSocketServer } = require('ws');

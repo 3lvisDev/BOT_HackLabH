@@ -1,7 +1,36 @@
 require('dotenv').config();
+
+// Polyfill for Node 18 environments required by @distube/ytdl-core/undici
+const { Blob, File } = require('buffer');
+if (!globalThis.Blob) globalThis.Blob = Blob;
+if (!globalThis.File) {
+    globalThis.File = File || class File extends globalThis.Blob {
+        constructor(bits, name, options = {}) {
+            super(bits, options);
+            this.name = name;
+            this.lastModified = options.lastModified || Date.now();
+        }
+    };
+}
+
 const { Client, GatewayIntentBits, PermissionsBitField, ChannelType } = require('discord.js');
 const { startDashboard } = require('./dashboard');
 const { getGuildConfig, setGuildConfig } = require('./db');
+const { validateEnvironmentVariables } = require('./env-validator');
+
+// Validar variables de entorno al inicio
+validateEnvironmentVariables();
+
+// Manejadores globales de errores
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Promise Rejection:', reason);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  process.exit(1);
+});
 
 const client = new Client({
   intents: [
@@ -633,6 +662,12 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
     }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.DISCORD_TOKEN).catch(err => {
+  console.error(`\n❌ Error al conectar a Discord: ${err.message}`);
+  console.error(`\nVerifica que tu DISCORD_TOKEN sea válido.`);
+  console.error(`Si estás usando Docker, asegúrate de pasar la variable:`);
+  console.error(`  docker run -e DISCORD_TOKEN=tu_token ...\n`);
+  process.exit(1);
+});
 
 module.exports = { client, setupCommunity, applySmartRoles };

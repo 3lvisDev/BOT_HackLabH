@@ -3,7 +3,7 @@ FROM node:18-slim
 # Crear el directorio de la aplicación
 WORKDIR /usr/src/app
 
-# Instalar dependencias de sistema para Playwright y audio
+# Instalar dependencias de sistema para Playwright, audio y PulseAudio
 RUN apt-get update && apt-get install -y \
     build-essential \
     python3 \
@@ -24,6 +24,8 @@ RUN apt-get update && apt-get install -y \
     libcairo2 \
     alsa-utils \
     pulseaudio \
+    pulseaudio-utils \
+    dbus \
     xvfb \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
@@ -40,8 +42,12 @@ RUN npx playwright install chromium
 # Copiar el resto del código
 COPY . .
 
+# Copiar y dar permisos de ejecución al script de inicio
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Exponer el puerto
 EXPOSE 3000
 
-# Comando para iniciar
-CMD [ "npm", "start" ]
+# Usar el entrypoint para arrancar PulseAudio antes del bot
+ENTRYPOINT ["/entrypoint.sh"]

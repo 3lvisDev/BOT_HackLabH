@@ -1,9 +1,9 @@
 /* Obsidian Dark (Default) */
 :root {
     --bg-main: #050609;
-    --surface-glass: rgba(255, 255, 255, 0.02);
-    --surface-panel: rgba(10, 12, 18, 0.65);
-    --border-main: rgba(255, 255, 255, 0.1);
+    --surface-glass: rgba(15, 18, 25, 0.4);
+    --surface-panel: rgba(10, 12, 18, 0.8);
+    --border-main: rgba(255, 255, 255, 0.08);
     --inner-glow: inset 0 1px 1px rgba(255, 255, 255, 0.05);
     
     --primary: #6366f1;
@@ -70,6 +70,17 @@ body {
     letter-spacing: -0.01em;
 }
 
+/* --- Focus States & Accessibility --- */
+:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 4px;
+}
+
+.btn-mega:focus-visible, .btn-primary:focus-visible {
+    outline-color: #ffffff;
+    box-shadow: 0 0 0 4px var(--primary-glow);
+}
+
 /* --- Premium Mesh Gradient Background --- */
 .mesh-gradient {
     position: fixed;
@@ -104,8 +115,8 @@ body {
 .sidebar {
     width: 280px;
     background: var(--surface-panel);
-    backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
+    backdrop-filter: blur(40px);
     border-right: 1px solid var(--border-main);
     display: flex;
     flex-direction: column;
@@ -154,8 +165,8 @@ body.is-authenticated .login-wrapper {
     padding: 70px 50px;
     text-align: center;
     background: rgba(10, 12, 18, 0.85);
-    backdrop-filter: blur(100px);
     -webkit-backdrop-filter: blur(100px);
+    backdrop-filter: blur(100px);
     border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 48px;
     box-shadow: 0 60px 200px rgba(0,0,0,0.9), var(--inner-glow);
@@ -367,6 +378,7 @@ body.is-authenticated .main-content {
 
 .stat-card {
     background: var(--surface-glass);
+    -webkit-backdrop-filter: blur(20px);
     backdrop-filter: blur(20px);
     border: 1px solid var(--border-main);
     box-shadow: var(--inner-glow), 0 20px 40px rgba(0,0,0,0.2);
@@ -409,13 +421,14 @@ body.is-authenticated .main-content {
     align-items: center; justify-content: center;
     z-index: 2000;
     background: rgba(5, 6, 9, 0.85);
-    backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
+    backdrop-filter: blur(40px);
 }
 .reconnect-overlay:not(.hidden) { display: flex; }
 
 #reconnect-overlay .glass-panel, .reconnect-content {
     background: var(--surface-glass);
+    -webkit-backdrop-filter: blur(25px);
     backdrop-filter: blur(25px);
     border: 1px solid var(--border-main);
     border-radius: var(--border-radius);
@@ -441,6 +454,7 @@ body.is-authenticated .main-content {
 
 .glass-panel {
     background: var(--surface-glass);
+    -webkit-backdrop-filter: blur(25px);
     backdrop-filter: blur(25px);
     border: 1px solid var(--border-main);
     border-radius: var(--border-radius);
@@ -503,8 +517,8 @@ body.is-authenticated .main-content {
 .role-add-dropdown {
     position: absolute;
     background: rgba(10, 12, 18, 0.98);
-    backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
+    backdrop-filter: blur(40px);
     border: 1px solid rgba(255,255,255,0.2);
     border-radius: 18px;
     box-shadow: 0 30px 70px rgba(0,0,0,0.8), var(--inner-glow);
@@ -610,7 +624,7 @@ body.is-authenticated .main-content {
     transition: all 0.3s;
     margin-top: 1rem;
 }
-#restart-btn:hover { background: var(--danger); color: white; border-color: var(--danger); box-shadow: 0 0 20px rgba(239, 44, 68, 0.3); }
+#restart-btn:hover { background: #ef4444; color: white; border-color: #ef4444; box-shadow: 0 0 20px rgba(239, 44, 68, 0.3); }
 
 .btn-mega {
     width: 100%; padding: 1.4rem;
@@ -632,6 +646,7 @@ body.is-authenticated .main-content {
     display: none;
     height: 70px;
     background: rgba(10, 12, 18, 0.8);
+    -webkit-backdrop-filter: blur(20px);
     backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--border-main);
     padding: 0 1.5rem; 

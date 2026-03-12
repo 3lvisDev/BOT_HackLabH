@@ -52,6 +52,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedTheme = localStorage.getItem('hacklab-theme') || 'dark';
     setTheme(savedTheme);
 
+    // --- URL State Management ---
+    function syncStateWithURL() {
+        const hash = window.location.hash.substring(1);
+        if (hash) {
+            const item = document.querySelector(`.nav-item[data-screen="${hash}"]`);
+            if (item) item.click();
+        }
+    }
+
     // --- Initialization ---
     checkSession();
 
@@ -88,8 +97,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (screenId === 'music-screen') {
                 refreshMusicStatus();
             }
+
+            // Sync hash with current screen
+            window.location.hash = screenId;
         });
     });
+
+    // Expose globally for onclick handlers in HTML
+    window.switchScreen = (screenId) => {
+        const item = document.querySelector(`.nav-item[data-screen="${screenId}"]`);
+        if (item) item.click();
+    };
 
     // --- Filters ---
     filterBtns.forEach(btn => {
@@ -127,6 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         updateStats();
         await loadInitialData();
+        
+        // Finalize initialization by syncing URL
+        syncStateWithURL();
     }
 
     async function loadInitialData() {
@@ -446,7 +467,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    logoutBtn.addEventListener('click', () => fetch('/api/logout', { method: 'POST' }).then(() => window.location.reload()));
+    logoutBtn.addEventListener('click', () => {
+        logoutBtn.disabled = true;
+        logoutBtn.textContent = 'Cerrando sesión…';
+        fetch('/api/logout', { method: 'POST' }).then(() => window.location.reload());
+    });
 
     // --- Mobile Sidebar Toggle ---
     if (menuToggle) {

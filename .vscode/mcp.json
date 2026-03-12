@@ -1,0 +1,22 @@
+{
+  "servers": {
+    "sqlite": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sqlite",
+        "C:\\BOT_HackLabH\\bot_data_backup.sqlite"
+      ]
+    },
+    "git": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-server-git"
+      ],
+      "env": {
+        "GIT_REPO_PATH": "C:\\BOT_HackLabH"
+      }
+    }
+  }
+}
