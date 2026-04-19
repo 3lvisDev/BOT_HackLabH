@@ -330,6 +330,66 @@ async function handleTicketSlashCommand(interaction) {
     return false;
 }
 
+async function handleEmojiSlashCommand(interaction) {
+    const { createEmojiFromUrl, EMOJI_NAME_REGEX } = require('./commands/emoji');
+    const guild = interaction.guild;
+
+    const hasPermission = interaction.memberPermissions?.has(
+        PermissionsBitField.Flags.ManageGuildExpressions || PermissionsBitField.Flags.ManageEmojisAndStickers
+    );
+    if (!hasPermission) {
+        await interaction.reply({ content: 'Necesitas permiso **Gestionar emojis y stickers**.', ephemeral: true });
+        return true;
+    }
+
+    if (interaction.commandName === 'emoji_add') {
+        const name = interaction.options.getString('name', true).trim();
+        const url = interaction.options.getString('url', true).trim();
+
+        if (!EMOJI_NAME_REGEX.test(name)) {
+            await interaction.reply({ content: 'Nombre inválido. Usa 2-32 caracteres alfanuméricos o guion bajo.', ephemeral: true });
+            return true;
+        }
+
+        try {
+            const emoji = await createEmojiFromUrl(guild, name, url, interaction.user.id);
+            await interaction.reply(`Emoji agregado: <:${emoji.name}:${emoji.id}>`);
+        } catch (err) {
+            await interaction.reply({ content: `No se pudo agregar emoji: ${err.message}`, ephemeral: true });
+        }
+        return true;
+    }
+
+    if (interaction.commandName === 'emoji_delete') {
+        const name = interaction.options.getString('name', true).trim();
+        const emoji = guild.emojis.cache.find((item) => item.name === name);
+        if (!emoji) {
+            await interaction.reply({ content: 'Emoji no encontrado en este servidor.', ephemeral: true });
+            return true;
+        }
+        try {
+            await emoji.delete(`Eliminado por ${interaction.user.id}`);
+            await interaction.reply(`Emoji eliminado: **${name}**`);
+        } catch (err) {
+            await interaction.reply({ content: `No se pudo eliminar emoji: ${err.message}`, ephemeral: true });
+        }
+        return true;
+    }
+
+    if (interaction.commandName === 'emoji_list') {
+        const emojis = Array.from(guild.emojis.cache.values());
+        if (!emojis.length) {
+            await interaction.reply('Este servidor no tiene emojis personalizados.');
+            return true;
+        }
+        const lines = emojis.slice(0, 50).map((emoji) => `${emoji.animated ? 'a' : 's'} • :${emoji.name}: • \`${emoji.id}\``);
+        await interaction.reply(`Emojis del servidor (${emojis.length}):\n${lines.join('\n')}`);
+        return true;
+    }
+
+    return false;
+}
+
 /**
  * Función auxiliar para reemplazar variables en los mensajes
  */
@@ -926,6 +986,10 @@ client.on('messageCreate', async (message) => {
   // --- Comandos de Tickets ---
   const { handleTicketCommand } = require('./commands/tickets');
   if (await handleTicketCommand(message)) return;
+
+  // --- Comandos de Emojis ---
+  const { handleEmojiCommand } = require('./commands/emoji');
+  if (await handleEmojiCommand(message)) return;
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -947,6 +1011,10 @@ client.on('interactionCreate', async (interaction) => {
         }
         if (command.startsWith('ticket_')) {
             await handleTicketSlashCommand(interaction);
+            return;
+        }
+        if (command.startsWith('emoji_')) {
+            await handleEmojiSlashCommand(interaction);
             return;
         }
         await interaction.reply({ content: 'Comando no reconocido.', ephemeral: true });

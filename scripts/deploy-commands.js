@@ -74,6 +74,18 @@ const commands = [
     .setName('ticket_close')
     .setDescription('Cierra ticket por ID')
     .addIntegerOption((option) => option.setName('id').setDescription('ID ticket').setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('emoji_add')
+    .setDescription('Sube un emoji al servidor desde una URL')
+    .addStringOption((option) => option.setName('name').setDescription('Nombre del emoji').setRequired(true))
+    .addStringOption((option) => option.setName('url').setDescription('URL de imagen (png/jpg/gif/webp/avif)').setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('emoji_delete')
+    .setDescription('Elimina un emoji por nombre')
+    .addStringOption((option) => option.setName('name').setDescription('Nombre del emoji').setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('emoji_list')
+    .setDescription('Lista los emojis personalizados del servidor'),
 ].map((command) => command.toJSON());
 
 async function main() {

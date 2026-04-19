@@ -19,6 +19,10 @@ module.exports = {
                     value: '`!ticket open <título>`\n`!ticket list [open|closed|all]`\n`!ticket close <id>`',
                 },
                 {
+                    name: '😀 Emojis',
+                    value: '`!emoji add <nombre> <url>`\n`!emoji delete <nombre>`\n`!emoji list`\nRequiere permiso Gestionar emojis y stickers.',
+                },
+                {
                     name: '⚙️ Configuración',
                     value: '`.setup_community` - Inicia la configuración automática del servidor (Solo Owner).',
                 },
