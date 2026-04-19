@@ -1,7 +1,43 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits, PermissionsBitField, ChannelType } = require('discord.js');
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+const timestamp = () => new Date().toISOString();
+console.log(`[${timestamp()}] [System] Configuración cargada. Puerto Dashboard: ${process.env.PORT || 3000}`);
+console.log(`[${timestamp()}] [System] Token presente: ${process.env.DISCORD_TOKEN ? 'SÍ' : 'NO'}`);
+
+// Polyfill for Node 18 environments required by @distube/ytdl-core/undici
+const { Blob, File } = require('buffer');
+if (!globalThis.Blob) globalThis.Blob = Blob;
+if (!globalThis.File) {
+    globalThis.File = File || class File extends globalThis.Blob {
+        constructor(bits, name, options = {}) {
+            super(bits, options);
+            this.name = name;
+            this.lastModified = options.lastModified || Date.now();
+        }
+    };
+}
+
+const { Client, GatewayIntentBits, Partials, ActivityType, PermissionsBitField, ChannelType } = require('discord.js');
+const db = require('./db');
+const { getGuildConfig, setGuildConfig } = db;
+const { validateEnvironmentVariables } = require('./scripts/env-validator');
+const { logSystemEvent } = require('./music/logger');
 const { startDashboard } = require('./dashboard');
-const { getGuildConfig, setGuildConfig } = require('./db');
+const { applyBotPresence } = require('./utils/botProfile');
+
+// Validar variables de entorno al inicio
+validateEnvironmentVariables();
+
+// Manejadores globales de errores
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Promise Rejection:', reason);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  process.exit(1);
+});
 
 const client = new Client({
   intents: [
@@ -9,12 +45,370 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates,
   ],
 });
 
-const db = require('./db');
 const MusicManager = require('./music/MusicManager');
 const musicManager = new MusicManager(client);
+
+function formatQueueStatus(queue) {
+    const lines = [];
+    lines.push(`En reproducción: **${queue.nowPlaying || 'Nada'}**`);
+
+    if (queue.upcoming.length) {
+        lines.push('Siguientes:');
+        queue.upcoming.forEach((track, index) => {
+            lines.push(`${index + 1}. ${track}`);
+        });
+    } else {
+        lines.push('Cola vacía.');
+    }
+
+    lines.push(`Estado: **${queue.paused ? 'pausado' : 'reproduciendo'}**`);
+    lines.push(`Total en cola: **${queue.total}**`);
+    return lines.join('\n');
+}
+
+async function handleMusicSlashCommand(interaction) {
+    const guildId = interaction.guildId;
+    const command = interaction.commandName;
+    const voiceChannel = interaction.member?.voice?.channel;
+    const status = musicManager.getStatus(guildId);
+
+    const requireVoiceInSameChannel = async (actionText) => {
+        if (!status.active) {
+            await interaction.reply({ content: 'No hay ninguna reproducción activa.', ephemeral: true });
+            return false;
+        }
+
+        if (!voiceChannel || voiceChannel.id !== status.channelId) {
+            await interaction.reply({
+                content: `Debes estar en el canal de voz **${status.channelId}** para ${actionText}.`,
+                ephemeral: true
+            });
+            return false;
+        }
+        return true;
+    };
+
+    if (command === 'play') {
+        const queryRaw = interaction.options.getString('query', true);
+        if (!voiceChannel) {
+            await interaction.reply({ content: 'Debes estar en un canal de voz.', ephemeral: true });
+            return;
+        }
+
+        await interaction.reply('Buscando música…');
+        try {
+            const result = await musicManager.play(guildId, voiceChannel.id, queryRaw);
+            await interaction.editReply(`Reproduciendo ahora: **${result.title}** en el canal **${result.channel}** • Radio ${result.radioEnabled ? 'activado' : 'desactivado'}`);
+        } catch (err) {
+            await interaction.editReply(`Error: ${err.message}`);
+        }
+        return;
+    }
+
+    if (command === 'stop') {
+        if (!await requireVoiceInSameChannel('detener la música')) return;
+        try {
+            await musicManager.stop(guildId);
+            await interaction.reply('Reproducción detenida y recursos liberados.');
+        } catch (err) {
+            await interaction.reply({ content: `Error al detener: ${err.message}`, ephemeral: true });
+        }
+        return;
+    }
+
+    if (command === 'skip' || command === 'next') {
+        if (!await requireVoiceInSameChannel('saltar la música')) return;
+        try {
+            const result = await musicManager.skip(guildId);
+            if (result.hadQueue) {
+                await interaction.reply(`Saltando canción… Siguiente: **${result.nextTrack || 'Cargando…'}**`);
+            } else {
+                await interaction.reply('Canción saltada. No hay más canciones en cola.');
+            }
+        } catch (err) {
+            await interaction.reply({ content: `Error al saltar: ${err.message}`, ephemeral: true });
+        }
+        return;
+    }
+
+    if (command === 'previous') {
+        if (!await requireVoiceInSameChannel('volver a la anterior')) return;
+        try {
+            const result = await musicManager.previous(guildId);
+            await interaction.reply(`Volviendo a la anterior: **${result.track}**`);
+        } catch (err) {
+            await interaction.reply({ content: `Error al volver: ${err.message}`, ephemeral: true });
+        }
+        return;
+    }
+
+    if (command === 'pause') {
+        if (!await requireVoiceInSameChannel('pausar')) return;
+        try {
+            const result = await musicManager.pause(guildId);
+            await interaction.reply(`Pausado: **${result.currentTrack}**`);
+        } catch (err) {
+            await interaction.reply({ content: `Error al pausar: ${err.message}`, ephemeral: true });
+        }
+        return;
+    }
+
+    if (command === 'resume') {
+        if (!await requireVoiceInSameChannel('reanudar')) return;
+        try {
+            const result = await musicManager.resume(guildId);
+            await interaction.reply(`Reanudado: **${result.currentTrack}**`);
+        } catch (err) {
+            await interaction.reply({ content: `Error al reanudar: ${err.message}`, ephemeral: true });
+        }
+        return;
+    }
+
+    if (command === 'queue') {
+        try {
+            const queue = musicManager.getQueue(guildId, 10);
+            await interaction.reply(formatQueueStatus(queue));
+        } catch (err) {
+            await interaction.reply({ content: `Error al leer cola: ${err.message}`, ephemeral: true });
+        }
+        return;
+    }
+
+    if (command === 'help') {
+        await interaction.reply({
+            ephemeral: true,
+            content:
+                'Comandos: `/play`, `/stop`, `/skip`, `/next`, `/previous`, `/pause`, `/resume`, `/queue`.\n' +
+                'Playlists: `/playlist_create`, `/playlist_add`, `/playlist_import`, `/playlist_play`.\n' +
+                'También puedes usar prefijos `!` y `.`.'
+        });
+    }
+}
+
+async function handlePlaylistSlashCommand(interaction) {
+    const db = require('./db');
+    const guildId = interaction.guildId;
+    const voiceChannel = interaction.member?.voice?.channel;
+    const name = interaction.options.getString('name');
+
+    if (interaction.commandName === 'playlist_create') {
+        if (!name) {
+            await interaction.reply({ content: 'Debes indicar nombre.', ephemeral: true });
+            return true;
+        }
+        await db.createPlaylist(guildId, name, interaction.user.id);
+        await interaction.reply(`Playlist creada: **${name}**`);
+        return true;
+    }
+
+    if (interaction.commandName === 'playlist_list') {
+        const playlists = await db.getPlaylists(guildId);
+        if (!playlists.length) {
+            await interaction.reply('No hay playlists aún.');
+            return true;
+        }
+        await interaction.reply(playlists.map((p) => `• **${p.name}** (${p.item_count} tracks)`).join('\n'));
+        return true;
+    }
+
+    if (interaction.commandName === 'playlist_add') {
+        if (!name) {
+            await interaction.reply({ content: 'Debes indicar nombre.', ephemeral: true });
+            return true;
+        }
+        const query = interaction.options.getString('query', true);
+        const { position } = await db.addPlaylistItem(guildId, name, query, interaction.user.id);
+        await interaction.reply(`Agregado a **${name}** (#${position})`);
+        return true;
+    }
+
+    if (interaction.commandName === 'playlist_play') {
+        if (!name) {
+            await interaction.reply({ content: 'Debes indicar nombre.', ephemeral: true });
+            return true;
+        }
+        if (!voiceChannel) {
+            await interaction.reply({ content: 'Debes estar en un canal de voz.', ephemeral: true });
+            return true;
+        }
+        const playlist = await db.getPlaylistByName(guildId, name);
+        if (!playlist) {
+            await interaction.reply({ content: 'Playlist no encontrada.', ephemeral: true });
+            return true;
+        }
+        const items = await db.getPlaylistItems(playlist.id);
+        if (!items.length) {
+            await interaction.reply({ content: 'Playlist vacía.', ephemeral: true });
+            return true;
+        }
+        await musicManager.enqueueMany(guildId, voiceChannel.id, items.map((i) => i.query));
+        await interaction.reply(`Playlist **${name}** encolada (${items.length} tracks).`);
+        return true;
+    }
+
+    if (interaction.commandName === 'playlist_import') {
+        if (!name) {
+            await interaction.reply({ content: 'Debes indicar nombre.', ephemeral: true });
+            return true;
+        }
+        const spotifyUrl = interaction.options.getString('spotify_url', true);
+        const playlist = await db.getPlaylistByName(guildId, name);
+        if (!playlist) {
+            await interaction.reply({ content: 'Playlist no encontrada.', ephemeral: true });
+            return true;
+        }
+        if (!musicManager || typeof musicManager.resolvePlayableQueries !== 'function') {
+            await interaction.reply({ content: 'Sistema de importación no disponible.', ephemeral: true });
+            return true;
+        }
+
+        const queries = await musicManager.resolvePlayableQueries(spotifyUrl);
+        if (!queries.length) {
+            await interaction.reply({ content: 'No se encontraron tracks para importar.', ephemeral: true });
+            return true;
+        }
+
+        for (const query of queries) {
+            await db.addPlaylistItem(guildId, name, query, interaction.user.id);
+        }
+
+        await interaction.reply(`Importados ${queries.length} tracks en **${name}**.`);
+        return true;
+    }
+
+    return false;
+}
+
+async function handleTicketSlashCommand(interaction) {
+    const db = require('./db');
+    const { ChannelType, PermissionsBitField } = require('discord.js');
+    const guild = interaction.guild;
+
+    if (interaction.commandName === 'ticket_open') {
+        const title = interaction.options.getString('title', true);
+        const channelName = `ticket-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 90);
+        const channel = await guild.channels.create({
+            name: channelName || `ticket-${Date.now()}`,
+            type: ChannelType.GuildText,
+            permissionOverwrites: [
+                { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+                { id: guild.members.me.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageChannels] }
+            ]
+        });
+        const ticket = await db.createTicket(guild.id, interaction.user.id, title, channel.id);
+        await interaction.reply(`Ticket creado: <#${channel.id}> (ID #${ticket.id})`);
+        return true;
+    }
+
+    if (interaction.commandName === 'ticket_list') {
+        const status = interaction.options.getString('status') || 'open';
+        const tickets = await db.getTickets(guild.id, status === 'all' ? null : status);
+        if (!tickets.length) {
+            await interaction.reply('No hay tickets para ese filtro.');
+            return true;
+        }
+        await interaction.reply(tickets.slice(0, 20).map((t) => `#${t.id} [${t.status}] ${t.title}`).join('\n'));
+        return true;
+    }
+
+    if (interaction.commandName === 'ticket_close') {
+        const id = interaction.options.getInteger('id', true);
+        const ticket = await db.closeTicket(guild.id, id);
+        if (!ticket) {
+            await interaction.reply({ content: 'Ticket no encontrado.', ephemeral: true });
+            return true;
+        }
+        await interaction.reply(`Ticket #${id} cerrado.`);
+        return true;
+    }
+
+    return false;
+}
+
+async function handleEmojiSlashCommand(interaction) {
+    const { createEmojiFromUrl, EMOJI_NAME_REGEX } = require('./commands/emoji');
+    const { fetchApplicationEmojis, emojiOrFallback } = require('./utils/appEmojis');
+    const guild = interaction.guild;
+
+    const hasPermission = interaction.memberPermissions?.has(
+        PermissionsBitField.Flags.ManageGuildExpressions || PermissionsBitField.Flags.ManageEmojisAndStickers
+    );
+    if (!hasPermission) {
+        await interaction.reply({ content: 'Necesitas permiso **Gestionar emojis y stickers**.', ephemeral: true });
+        return true;
+    }
+
+    if (interaction.commandName === 'emoji_add') {
+        const name = interaction.options.getString('name', true).trim();
+        const url = interaction.options.getString('url', true).trim();
+
+        if (!EMOJI_NAME_REGEX.test(name)) {
+            await interaction.reply({ content: 'Nombre inválido. Usa 2-32 caracteres alfanuméricos o guion bajo.', ephemeral: true });
+            return true;
+        }
+
+        try {
+            const emoji = await createEmojiFromUrl(guild, name, url, interaction.user.id);
+            await interaction.reply(`Emoji agregado: <:${emoji.name}:${emoji.id}>`);
+        } catch (err) {
+            await interaction.reply({ content: `No se pudo agregar emoji: ${err.message}`, ephemeral: true });
+        }
+        return true;
+    }
+
+    if (interaction.commandName === 'emoji_delete') {
+        const name = interaction.options.getString('name', true).trim();
+        const emoji = guild.emojis.cache.find((item) => item.name === name);
+        if (!emoji) {
+            await interaction.reply({ content: 'Emoji no encontrado en este servidor.', ephemeral: true });
+            return true;
+        }
+        try {
+            await emoji.delete(`Eliminado por ${interaction.user.id}`);
+            await interaction.reply(`Emoji eliminado: **${name}**`);
+        } catch (err) {
+            await interaction.reply({ content: `No se pudo eliminar emoji: ${err.message}`, ephemeral: true });
+        }
+        return true;
+    }
+
+    if (interaction.commandName === 'emoji_list') {
+        const emojis = Array.from(guild.emojis.cache.values());
+        if (!emojis.length) {
+            await interaction.reply('Este servidor no tiene emojis personalizados.');
+            return true;
+        }
+        const lines = emojis.slice(0, 50).map((emoji) => `${emoji.animated ? 'a' : 's'} • :${emoji.name}: • \`${emoji.id}\``);
+        await interaction.reply(`Emojis del servidor (${emojis.length}):\n${lines.join('\n')}`);
+        return true;
+    }
+
+    if (interaction.commandName === 'emoji_app_list') {
+        const appEmojis = await fetchApplicationEmojis(interaction.client);
+        if (!appEmojis.length) {
+            await interaction.reply('Tu aplicación no tiene emojis subidos todavía.');
+            return true;
+        }
+        const lines = appEmojis.slice(0, 80).map((emoji) => `${emoji.animated ? 'a' : 's'} • :${emoji.name}: • \`${emoji.id}\``);
+        await interaction.reply(`Emojis de la aplicación (${appEmojis.length}):\n${lines.join('\n')}`);
+        return true;
+    }
+
+    if (interaction.commandName === 'emoji_use') {
+        const name = interaction.options.getString('name', true).trim();
+        const fallback = interaction.options.getString('fallback')?.trim() || '✨';
+        const value = await emojiOrFallback(interaction.client, name, fallback);
+        await interaction.reply(`Resultado: ${value}`);
+        return true;
+    }
+
+    return false;
+}
 
 /**
  * Función auxiliar para reemplazar variables en los mensajes
@@ -446,6 +840,18 @@ async function setupCommunity(guild, logger = console.log, adminUserIds = [], mo
         ],
       },
       {
+        id: guild.members.me?.roles.highest.id || client.user.id,
+        allow: [
+          PermissionsBitField.Flags.ViewChannel,
+          PermissionsBitField.Flags.ManageChannels,
+          PermissionsBitField.Flags.ManageRoles,
+          PermissionsBitField.Flags.Connect,
+          PermissionsBitField.Flags.Speak,
+          PermissionsBitField.Flags.UseVAD,
+          PermissionsBitField.Flags.Stream
+        ]
+      },
+      {
         // El creador original siempre tiene max power, aunque Discord ya lo hace por defecto
         id: guild.ownerId,
         allow: [
@@ -512,9 +918,20 @@ async function setupCommunity(guild, logger = console.log, adminUserIds = [], mo
   }
 }
 
+client.on('voiceStateUpdate', (oldState, newState) => {
+    if (newState.id === client.user.id) {
+        console.log(`[System] VoiceStateUpdate para el bot: Canal ${newState.channelId}`);
+        if (!newState.channelId) {
+            applyBotPresence(client, { active: false });
+        }
+    }
+});
+
 client.once('ready', () => {
   console.log(`Bot iniciado como ${client.user.tag}`);
-  console.log('Esperando comando: !setup_community en canales o mediante el Dashboard Web.');
+  logSystemEvent(null, 'info', `Bot online como ${client.user.tag}`);
+  console.log('Esperando comando: .setup_community en canales o mediante el Dashboard Web.');
+  applyBotPresence(client, { active: false });
   
   // Iniciar el panel web cuando el bot esté listo
   startDashboard(client, setupCommunity, applySmartRoles, musicManager);
@@ -522,6 +939,10 @@ client.once('ready', () => {
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
+  
+  if (message.content.startsWith('.') || message.content.startsWith('!')) {
+      console.log(`[${timestamp()}] [Message] Recibido: "${message.content}" de ${message.author.tag}`);
+  }
 
   // --- Tracking de Logros ---
   try {
@@ -545,7 +966,7 @@ client.on('messageCreate', async (message) => {
       }
   } catch (err) { console.error("[Achievements] Error:", err); }
 
-  if (message.content.startsWith('!setup_community')) {
+  if (message.content.startsWith('.setup_community')) {
     // Solo el creador del servidor original puede ejecutarlo por comando de texto
     if (message.guild.ownerId !== message.author.id) {
       return message.reply("Solo el creador del servidor puede ejecutar este comando manualmente.");
@@ -570,9 +991,61 @@ client.on('messageCreate', async (message) => {
     }
   }
 
+  // --- Comandos de Ayuda ---
+  const { handleHelpCommand } = require('./commands/help');
+  if (await handleHelpCommand(message)) return;
+
   // --- Comandos de Música ---
   const { handleMusicCommand } = require('./commands/music');
   if (await handleMusicCommand(message, musicManager)) return;
+
+  // --- Comandos de Playlist ---
+  const { handlePlaylistCommand } = require('./commands/playlist');
+  if (await handlePlaylistCommand(message, musicManager)) return;
+
+  // --- Comandos de Tickets ---
+  const { handleTicketCommand } = require('./commands/tickets');
+  if (await handleTicketCommand(message)) return;
+
+  // --- Comandos de Emojis ---
+  const { handleEmojiCommand } = require('./commands/emoji');
+  if (await handleEmojiCommand(message)) return;
+});
+
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    if (!interaction.inGuild()) {
+        await interaction.reply({ content: 'Este comando solo funciona en servidores.', ephemeral: true });
+        return;
+    }
+
+    try {
+        const command = interaction.commandName;
+        if (['play', 'stop', 'skip', 'next', 'previous', 'pause', 'resume', 'queue', 'help'].includes(command)) {
+            await handleMusicSlashCommand(interaction);
+            return;
+        }
+        if (command.startsWith('playlist_')) {
+            await handlePlaylistSlashCommand(interaction);
+            return;
+        }
+        if (command.startsWith('ticket_')) {
+            await handleTicketSlashCommand(interaction);
+            return;
+        }
+        if (command.startsWith('emoji_')) {
+            await handleEmojiSlashCommand(interaction);
+            return;
+        }
+        await interaction.reply({ content: 'Comando no reconocido.', ephemeral: true });
+    } catch (error) {
+        console.error('[Slash] Error:', error);
+        if (interaction.deferred || interaction.replied) {
+            await interaction.followUp({ content: 'Ocurrió un error procesando el comando.', ephemeral: true });
+        } else {
+            await interaction.reply({ content: 'Ocurrió un error procesando el comando.', ephemeral: true });
+        }
+    }
 });
 
 // Auto-rol al unirse usando DB y Mensaje de Bienvenida
@@ -589,6 +1062,7 @@ client.on('guildMemberAdd', async (member) => {
 
         if (baseRole) {
             await member.roles.add(baseRole);
+            logSystemEvent(member.guild.id, 'info', `Auto-rol asignado a ${member.user.tag}`);
             console.log(`[AutoRole] Asignado '${baseRole.name}' a ${member.user.tag}`);
             setTimeout(() => applySmartRoles(member), 3000);
         }
@@ -633,6 +1107,14 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
     }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.DISCORD_TOKEN).catch(err => {
+  console.error(`\n❌ Error al conectar a Discord: ${err.message}`);
+  console.error(`\nVerifica que tu DISCORD_TOKEN sea válido.`);
+  console.error(`Si estás usando Docker, asegúrate de pasar la variable:`);
+  console.error(`  docker run -e DISCORD_TOKEN=tu_token ...\n`);
+  process.exit(1);
+});
 
 module.exports = { client, setupCommunity, applySmartRoles };
+
+

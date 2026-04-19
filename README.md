@@ -1,66 +1,146 @@
-# Configuración de Bot de Discord para Comunidad de Programación
+# HackLabH Bot — Discord Automation Suite
 
-Este proyecto contiene un bot desarrollado en Node.js que configura un servidor de Discord para una comunidad de programación con un solo comando.
+> **Music + Web Player + Spotify Import + Playlists + Tickets + Leveling + Pro Dashboard**
 
-## Características
+[![Discord](https://img.shields.io/badge/Support-Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/BX9mTRekGx)
+[![Panel](https://img.shields.io/badge/Panel-panel.hacklabh.xyz-111827?logo=vercel&logoColor=white)](https://panel.hacklabh.xyz)
+[![Website](https://img.shields.io/badge/Web-www.hacklabh.xyz-0B1220?logo=googlechrome&logoColor=white)](https://www.hacklabh.xyz)
 
-- Revoca automáticamente los permisos de administrador del rol `@everyone` y ajusta permisos básicos.
-- Crea el rol `Admin` y asigna este rol **únicamente** a los 3 usuarios que especifiques en las variables de entorno, otorgándoles permiso total.
-- Crea el rol `Desarrollador` para miembros generales.
-- Al unirse un nuevo miembro al servidor, se le asigna el rol de `Desarrollador` automáticamente.
-- Crea una jerarquía de canales enfocada a desarrolladores (`#general`, `#ayuda-codigo`, `#proyectos-showcase` y una sala de voz).
+HackLabH Bot is a production-ready Discord bot focused on community growth, music experience, moderation workflows, and premium dashboard control.
 
-## Requisitos Previos
+---
 
-Antes de ejecutar el bot, necesitas:
-1. Tener [Node.js](https://nodejs.org/) instalado en tu sistema.
-2. Contar con el Token de tu bot de Discord (genéralo en el [Portal de Desarrolladores de Discord](https://discord.com/developers/applications)).
-3. Asegurarte de que el bot tenga el **Permiso de Administrador** (`Administrator`) al ser invitado al servidor para que pueda gestionar los roles y canales.
-4. Habilitar los "Privileged Gateway Intents" (`Server Members Intent` y `Message Content Intent`) en la página del bot en el portal de desarrolladores.
+## 🚀 Core Value
 
-## Instalación y Configuración
+- **One bot, all essentials** for active communities
+- **Modern UX** for users and staff (Discord + Web Dashboard)
+- **Fast operations** with clear commands and reliable behavior
+- **Built to scale** with Lavalink, structured logs, and modular architecture
 
-1. Abre esta carpeta en tu terminal.
-2. Renombra el archivo `.env.example` a `.env` (si aún no lo has hecho) y completa la información fundamental:
-   ```
-   DISCORD_TOKEN=tu_token_aqui
-   PORT=3000
-   WEB_ADMIN_PASSWORD=hacklab_secreto
-   ```
-   *Nota: ¡Ya no necesitas buscar IDs interminables de antemano! El bot buscará automáticamente el servidor.*
-3. Instala las dependencias necesarias:
-   ```bash
-   npm install
-   ```
-4. Inicia el bot con:
-   ```bash
-   npm start
-   ```
+---
 
-## Ejecución con Docker (Recomendado)
+## ✨ Product Modules
 
-Si prefieres no instalar Node.js en tu máquina, ¡puedes usar Docker! 🐋
+## 🎵 Music Engine
+- Play/search by query or URL
+- Queue management, pause/resume, skip/next, previous/back
+- Radio continuity mode when queue ends
+- Live stream + DJ auto fallback mode
 
-1. Asegúrate de tener **Docker** y **Docker Desktop** instalados.
-2. Abre la terminal en esta carpeta (`C:\BOT_HackLabH`).
-3. Construye la imagen del bot:
-   ```bash
-   docker build -t discord-bot-hacklab .
-   ```
-4. Ejecuta el contenedor (asegúrate de que el archivo `.env` esté listo con tu token):
-   ```bash
-   docker run -d -p 3000:3000 --env-file .env --name mi-bot hacklab discord-bot-hacklab
-   ```
-   *(Esto iniciará el bot en segundo plano y conectará el panel web al puerto 3000 de tu PC).*
+## 🌐 Web Music Player
+- Browser control from dashboard
+- Real-time status + logs + queue flow
+- Server-aware controls (guild context)
 
-## Uso del Panel Web
+## 🎧 Spotify Integration
+- Spotify **track / playlist / album** URL support
+- Smart resolver to playable YouTube/YT Music queries
+- Import Spotify content directly into custom playlists
 
-¡El bot ahora incluye un moderno Panel de Administración Web!
+## 📚 Custom Playlists
+- Create/list/show/delete playlists per guild
+- Add/remove tracks manually
+- Import from Spotify in bulk
+- Play complete playlists in one action
 
-1. Invita el bot a tu servidor asegurándote de darle el permiso de Administrador.
-2. Tu terminal te mostrará un enlace (ej. `http://localhost:3000`). Bre en tu navegador.
-3. Inicia sesión con la contraseña que pusiste en `WEB_ADMIN_PASSWORD` (por defecto `hacklab_secreto`).
-4. Desde el hermoso dashboard con diseño "Glassmorphism" podrás ver las estadísticas en vivo de tu bot.
-5. Haz clic en **"Iniciar Configuración Automática"** y verás en tiempo real en la terminal web cómo se crean los roles de Administrador, Desarrollador, y todos los canales del servidor de forma instantánea.
+## 🎫 Tickets System
+- Open/list/close support tickets
+- Slash + prefix operations
+- Web API integration for panel workflows
 
-*(Si prefieres no usar la web, aún puedes escribir `!setup_community` dentro de cualquier canal del servidor)*.
+## 🏆 Leveling & Achievements
+- Message activity tracking
+- Milestone achievements with unlock announcements
+- Extensible achievement model in database
+
+## 😀 Emoji Suite
+- Add emoji from URL
+- Add emoji from attachment (`addfile`)
+- Delete/list guild emojis
+- List and resolve **application emojis** with fallback
+
+## 🔐 Secure Admin Panel
+- OAuth login (Discord)
+- Guild-scoped admin operations
+- Secrets panel restricted to authorized owner IDs
+- Rate limiting and sensitive endpoint controls
+
+---
+
+## 🧩 Commands Overview
+
+### Music
+- Prefix: `!play`, `!stop`, `!skip`, `!next`, `!previous`, `!pause`, `!resume`, `!queue`
+- Slash: `/play`, `/stop`, `/skip`, `/next`, `/previous`, `/pause`, `/resume`, `/queue`
+
+### Playlist
+- Prefix: `!playlist create|list|show|add|import|play|remove|delete`
+- Slash: `playlist_create`, `playlist_list`, `playlist_add`, `playlist_import`, `playlist_play`
+
+### Tickets
+- Prefix: `!ticket open|list|close`
+- Slash: `ticket_open`, `ticket_list`, `ticket_close`
+
+### Emojis
+- Prefix: `!emoji add|addfile|delete|list|app_list|use`
+- Slash: `emoji_add`, `emoji_delete`, `emoji_list`, `emoji_app_list`, `emoji_use`
+
+---
+
+## 🌍 Official Links
+
+- Website: [www.hacklabh.xyz](https://www.hacklabh.xyz)
+- Dashboard: [panel.hacklabh.xyz](https://panel.hacklabh.xyz)
+- Invite: [panel.hacklabh.xyz/invite](https://panel.hacklabh.xyz/invite)
+- Install: [panel.hacklabh.xyz/install](https://panel.hacklabh.xyz/install)
+- Terms: [panel.hacklabh.xyz/terms](https://panel.hacklabh.xyz/terms)
+- Privacy: [panel.hacklabh.xyz/privacy](https://panel.hacklabh.xyz/privacy)
+- Support: [discord.gg/BX9mTRekGx](https://discord.gg/BX9mTRekGx)
+
+---
+
+## ⚙️ Quick Setup
+
+```bash
+npm install
+cp .env.example .env
+npm run deploy:commands
+npm start
+```
+
+Required environment highlights:
+- `DISCORD_TOKEN`
+- `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`
+- `DISCORD_REDIRECT_URI`
+- `LAVALINK_URL` / `LAVALINK_PASSWORD`
+- `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` (for Spotify features)
+
+---
+
+## 🛡️ Security Highlights
+
+- Authenticated API routes
+- Owner-restricted secrets management
+- Session hardening + rate limiting
+- Input validation paths for music, dashboard, and emoji operations
+
+---
+
+## 📦 Releases
+
+See [CHANGELOG.md](./CHANGELOG.md) for full release history and marketing-ready notes.
+
+Latest release package includes:
+- Spotify resolver flow
+- Playlist Spotify import
+- Emoji management suite
+- Application emoji fallback helpers
+- Dashboard owner-only secrets hardening
+
+---
+
+## 🧠 Brand Positioning
+
+HackLabH Bot is designed as a **community operating system for Discord**:
+**engagement, entertainment, support, and control** in one unified experience.
+

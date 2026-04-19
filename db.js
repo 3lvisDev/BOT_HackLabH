@@ -10,7 +10,8 @@ async function initDB() {
             filename: path.join(__dirname, 'bot_data.sqlite'),
             driver: sqlite3.Database
         }).then(async (db) => {
-            await db.exec(`
+            try {
+                await db.exec(`
                 CREATE TABLE IF NOT EXISTS guild_configs (
                     guild_id TEXT PRIMARY KEY,
                     base_role_id TEXT,
@@ -59,7 +60,16 @@ async function initDB() {
                     metadata TEXT
                 );
             `);
-            return db;
+                return db;
+            } catch (err) {
+                console.error(`\n❌ Error en inicialización de BD: ${err.message}`);
+                console.error(`Verifica que la ruta de la BD sea accesible.\n`);
+                process.exit(1);
+            }
+        }).catch(err => {
+            console.error(`\n❌ Error al abrir BD: ${err.message}`);
+            console.error(`Verifica que SQLite esté instalado y la ruta sea válida.\n`);
+            process.exit(1);
         });
     }
     return dbPromise;
