@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedMods = [];
     let currentFilter = 'all';
     let currentUser = null;
+    let availableGuilds = [];
+    let currentGuildId = null;
 
     // --- DOM Elements ---
     const loginView = document.getElementById('login-view');
@@ -22,6 +24,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterBtns = document.querySelectorAll('.filter-btn');
     const navItems = document.querySelectorAll('.nav-item');
     const screens = document.querySelectorAll('.screen-view');
+    const guildSwitcher = document.getElementById('guild-switcher');
+    const guildSelector = document.getElementById('guild-selector');
 
     // --- Theme Management ---
     function setTheme(themeId) {
@@ -96,6 +100,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (screenId === 'music-screen') {
                 refreshMusicStatus();
+                loadPlaylists();
+            }
+            if (screenId === 'tickets-screen') {
+                loadTickets();
+            }
+            if (screenId === 'env-screen') {
+                refreshEnvSettings();
+            }
+
+            if (screenId === 'logs-screen') {
+                loadSystemLogs();
             }
 
             // Sync hash with current screen
@@ -117,6 +132,10 @@ document.addEventListener('DOMContentLoaded', () => {
             currentFilter = btn.getAttribute('data-filter');
             renderUserTable();
         });
+    });
+
+    guildSelector?.addEventListener('change', async (event) => {
+        await selectGuild(event.target.value);
     });
 
     // --- Core Functions ---
@@ -150,8 +169,82 @@ document.addEventListener('DOMContentLoaded', () => {
         syncStateWithURL();
     }
 
+    async function loadGuilds() {
+        try {
+            const res = await fetch('/api/guilds');
+            if (!res.ok) return;
+
+            const data = await res.json();
+            availableGuilds = data.guilds || [];
+            currentGuildId = data.activeGuildId || availableGuilds[0]?.id || null;
+            renderGuildSelector();
+        } catch (err) {
+            console.error('Error loading guilds', err);
+        }
+    }
+
+    function renderGuildSelector() {
+        if (!guildSelector || !guildSwitcher) return;
+
+        guildSelector.innerHTML = availableGuilds
+            .map(guild => `<option value="${guild.id}">${guild.name}</option>`)
+            .join('');
+
+        if (currentGuildId) {
+            guildSelector.value = currentGuildId;
+        }
+
+        guildSwitcher.classList.toggle('hidden', availableGuilds.length <= 1);
+    }
+
+    async function selectGuild(guildId) {
+        if (!guildId || guildId === currentGuildId) return;
+
+        try {
+            const res = await fetch('/api/guilds/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ guildId })
+            });
+
+            if (!res.ok) {
+                throw new Error('No se pudo cambiar de servidor');
+            }
+
+            currentGuildId = guildId;
+            await loadGuilds();
+            await updateStats();
+            await refreshData();
+            await refreshWelcomeSettings();
+
+            const logsScreen = document.getElementById('logs-screen');
+            const achievementsScreen = document.getElementById('achievements-screen');
+            const musicScreen = document.getElementById('music-screen');
+            const ticketsScreen = document.getElementById('tickets-screen');
+
+            if (logsScreen?.classList.contains('active')) {
+                await loadSystemLogs();
+            }
+            if (achievementsScreen?.classList.contains('active')) {
+                await refreshAchievements();
+            }
+            if (musicScreen?.classList.contains('active')) {
+                await refreshMusicStatus();
+                await loadMusicLogs();
+                await loadPlaylists();
+            }
+            if (ticketsScreen?.classList.contains('active')) {
+                await loadTickets();
+            }
+        } catch (err) {
+            console.error('Error switching guild', err);
+            await loadGuilds();
+        }
+    }
+
     async function loadInitialData() {
         try {
+            await loadGuilds();
             const [usersRes, rolesRes] = await Promise.all([
                 fetch('/api/users'),
                 fetch('/api/roles')
@@ -178,12 +271,41 @@ document.addEventListener('DOMContentLoaded', () => {
     async function updateStats() {
         try {
             const res = await fetch('/api/status');
+            const resMusic = await fetch('/api/music/status');
+            
             if (res.ok) {
                 const data = await res.json();
                 document.getElementById('stat-guilds').textContent = data.guildCount;
                 document.getElementById('stat-users').textContent = data.userCount;
+                
+                const indicator = document.getElementById('bot-live-indicator');
+                if (indicator) {
+                    indicator.textContent = 'Online';
+                    indicator.className = 'status-pill online';
+                }
+                const tagDisplay = document.getElementById('bot-tag-display');
+                if (tagDisplay) tagDisplay.textContent = data.botTag || '---';
+                const guildDisplay = document.getElementById('active-guild-display');
+                if (guildDisplay) guildDisplay.textContent = data.activeGuildName || '---';
             }
-        } catch (err) {}
+
+            if (resMusic.ok) {
+                const dataMusic = await resMusic.json();
+                const musicDisplay = document.getElementById('bot-music-display');
+                if (musicDisplay) {
+                    musicDisplay.textContent = dataMusic.active ? (dataMusic.currentTrack || 'Música') : 'Nada';
+                    musicDisplay.className = dataMusic.active ? 'is-playing' : '';
+                }
+            }
+        } catch (err) {
+            const indicator = document.getElementById('bot-live-indicator');
+            if (indicator) {
+                indicator.textContent = 'Offline';
+                indicator.className = 'status-pill offline';
+            }
+            const guildDisplay = document.getElementById('active-guild-display');
+            if (guildDisplay) guildDisplay.textContent = '---';
+        }
     }
 
     // --- Rendering Logic ---
@@ -597,22 +719,101 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) { alert('Error al guardar'); }
     });
 
+
+
+    // --- Env Variables Logic ---
+    async function refreshEnvSettings() {
+        try {
+            const res = await fetch('/api/system/env');
+            if (res.ok) {
+                const data = await res.json();
+                Object.keys(data).forEach(key => {
+                    const input = document.getElementById(`env-${key}`);
+                    if (input) {
+                        input.value = data[key];
+                    }
+                });
+            }
+        } catch (err) { console.error("Error loading env", err); }
+    }
+
+    window.toggleSecret = (id) => {
+        const input = document.getElementById(id);
+        if (input.type === 'password') input.type = 'text';
+        else input.type = 'password';
+    };
+
+    document.getElementById('save-env-btn')?.addEventListener('click', async () => {
+        const payload = {};
+        const inputs = document.querySelectorAll('[id^="env-"]');
+        inputs.forEach(input => {
+            const key = input.id.replace('env-', '');
+            payload[key] = input.value;
+        });
+
+        try {
+            const res = await fetch('/api/system/env', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                const data = await res.json();
+                alert(data.message || 'Configuración guardada');
+                refreshEnvSettings();
+            }
+        } catch (err) { alert('Error al guardar variables'); }
+    });
+
+    document.getElementById('sync-github-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('sync-github-btn');
+        const syncLog = document.getElementById('github-sync-log');
+        btn.disabled = true;
+        syncLog.classList.remove('hidden');
+        syncLog.innerHTML = '<div class="log-entry system">🔄 Iniciando conexión con la API de GitHub...</div>';
+        
+        try {
+            const res = await fetch('/api/system/github/sync', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                syncLog.innerHTML += `<div class="log-entry success">✅ ${data.message}</div>`;
+                alert(data.message);
+            } else {
+                syncLog.innerHTML += `<div class="log-entry error">❌ Error: ${data.error}</div>`;
+                alert(data.error);
+            }
+        } catch (err) { 
+            syncLog.innerHTML += `<div class="log-entry error">❌ Error de conexión</div>`;
+            alert('Error en la sincronización'); 
+        }
+        
+        btn.disabled = false;
+    });
+
     // --- Music System Logic ---
     // --- Music System Logic (Console & Monitoring) ---
     const musicConsole = document.getElementById('music-console-log');
 
     function addLogEntry(data) {
-        if (!musicConsole) return;
+        if (!logContent && !musicConsole) return;
+        
         const entry = document.createElement('div');
         entry.className = `log-entry ${data.level || 'info'}`;
         const time = new Date(data.timestamp || Date.now()).toLocaleTimeString();
         entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-msg">${data.message}</span>`;
-        musicConsole.appendChild(entry);
-        musicConsole.scrollTop = musicConsole.scrollHeight;
+        
+        // Add to Music Console if it's a music log or we are in music screen
+        if (data.type === 'music:log' && musicConsole) {
+            musicConsole.appendChild(entry.cloneNode(true));
+            musicConsole.scrollTop = musicConsole.scrollHeight;
+            if (musicConsole.childNodes.length > 50) musicConsole.removeChild(musicConsole.firstChild);
+        }
 
-        // Limite de logs en el DOM
-        if (musicConsole.childNodes.length > 50) {
-            musicConsole.removeChild(musicConsole.firstChild);
+        // Add to System Log if it's a system log or we are in logs screen
+        if (logContent) {
+            logContent.appendChild(entry);
+            logContent.scrollTop = logContent.scrollHeight;
+            if (logContent.childNodes.length > 100) logContent.removeChild(logContent.firstChild);
         }
     }
 
@@ -624,7 +825,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         musicWS.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            if (data.type === 'music:log') {
+            if (data.type === 'music:log' || data.type === 'system:log') {
                 addLogEntry(data);
             } else if (data.type === 'status') {
                 addLogEntry({ level: 'system', message: data.message });
@@ -643,10 +844,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/music/logs');
             if (res.ok) {
                 const logs = await res.json();
-                musicConsole.innerHTML = '';
-                logs.reverse().forEach(addLogEntry);
+                if (musicConsole) musicConsole.innerHTML = '';
+                logs.reverse().forEach(log => {
+                    log.type = 'music:log';
+                    addLogEntry(log);
+                });
             }
         } catch (err) { console.error('Error loading music logs:', err); }
+    }
+
+    async function loadSystemLogs() {
+        try {
+            const res = await fetch('/api/logs/system');
+            if (res.ok) {
+                const logs = await res.json();
+                if (logContent) logContent.innerHTML = '';
+                logs.reverse().forEach(log => {
+                    log.type = 'system:log';
+                    addLogEntry(log);
+                });
+            }
+        } catch (err) { console.error('Error loading system logs:', err); }
     }
 
     if (musicConsole) {
@@ -657,29 +875,64 @@ document.addEventListener('DOMContentLoaded', () => {
     async function refreshMusicStatus() {
         try {
             const res = await fetch('/api/music/status');
-            if (res.ok) {
-                const data = await res.json();
-                const statusDot = document.getElementById('player-status-dot');
-                const statusText = document.getElementById('player-status-text');
-                const trackTitle = document.getElementById('current-track-title');
-                const trackAuthor = document.getElementById('current-track-author');
+            if (!res.ok) return;
+            const data = await res.json();
+            const statusText = document.getElementById('player-status-text');
+            const trackTitle = document.getElementById('current-track-title');
+            const trackAuthor = document.getElementById('current-track-author');
 
-                if (data.active) {
-                    statusDot.classList.add('active');
-                    statusText.innerText = 'Transmitiendo en Vivo';
-                    trackTitle.innerText = data.currentTrack || 'Reproduciendo...';
-                    trackAuthor.innerText = data.channel || 'Navegador Virtual Activo';
-                } else {
-                    statusDot.classList.remove('active');
-                    statusText.innerText = 'Navegador Inactivo';
-                    trackTitle.innerText = 'Nada sonando';
-                    trackAuthor.innerText = 'Inicia una búsqueda para empezar';
-                }
+            if (data.active) {
+                if (statusText) statusText.innerText = 'Transmitiendo en vivo';
+                if (trackTitle) trackTitle.innerText = data.currentTrack || 'Reproduciendo...';
+                if (trackAuthor) trackAuthor.innerText = data.channelId || data.channel || 'Canal de voz activo';
+            } else {
+                if (statusText) statusText.innerText = 'Sin reproduccion';
+                if (trackTitle) trackTitle.innerText = 'Nada sonando';
+                if (trackAuthor) trackAuthor.innerText = 'Usa Play o Queue para comenzar';
             }
         } catch (err) { console.error('Error refreshing music status:', err); }
     }
 
-    // Auto-refresh music status when on the screen
+    async function musicControl(action, query = '') {
+        const res = await fetch('/api/music/control', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, query })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error en control de musica');
+        await refreshMusicStatus();
+        return data;
+    }
+
+    async function loadPlaylists() {
+        const output = document.getElementById('playlist-console');
+        if (!output) return;
+        const res = await fetch('/api/playlists');
+        const data = await res.json();
+        if (!res.ok) {
+            output.textContent = `Error: ${data.error || 'No se pudo cargar playlists'}`;
+            return;
+        }
+        output.textContent = data.length
+            ? data.map((p) => `- ${p.name} (${p.item_count} tracks)`).join('\n')
+            : 'Sin playlists cargadas.';
+    }
+
+    async function loadTickets() {
+        const output = document.getElementById('tickets-console');
+        if (!output) return;
+        const res = await fetch('/api/tickets?status=open');
+        const data = await res.json();
+        if (!res.ok) {
+            output.textContent = `Error: ${data.error || 'No se pudo cargar tickets'}`;
+            return;
+        }
+        output.textContent = data.length
+            ? data.map((t) => `#${t.id} [${t.status}] ${t.title}`).join('\n')
+            : 'Sin tickets.';
+    }
+
     setInterval(() => {
         const musicScreen = document.getElementById('music-screen');
         if (musicScreen && musicScreen.classList.contains('active')) {
@@ -687,21 +940,91 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 5000);
 
-    document.getElementById('btn-save-yt-session')?.addEventListener('click', async () => {
-        const cookies = document.getElementById('yt-session-cookies').value;
+    document.getElementById('music-play-btn')?.addEventListener('click', async () => {
         try {
-            const res = await fetch('/api/music/session', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cookies })
-            });
-            if (res.ok) {
-                alert('¡Sesión de YouTube guardada!');
-            }
-        } catch (err) { alert('Error al guardar sesión'); }
+            const query = document.getElementById('web-music-query')?.value?.trim();
+            if (!query) return alert('Escribe una busqueda o URL.');
+            await musicControl('play', query);
+        } catch (err) { alert(err.message); }
+    });
+    document.getElementById('music-queue-btn')?.addEventListener('click', async () => {
+        try {
+            const query = document.getElementById('web-music-query')?.value?.trim();
+            if (!query) return alert('Escribe una busqueda o URL.');
+            await musicControl('queue', query);
+        } catch (err) { alert(err.message); }
+    });
+    document.getElementById('music-pause-btn')?.addEventListener('click', async () => { try { await musicControl('pause'); } catch (err) { alert(err.message); } });
+    document.getElementById('music-resume-btn')?.addEventListener('click', async () => { try { await musicControl('resume'); } catch (err) { alert(err.message); } });
+    document.getElementById('music-skip-btn')?.addEventListener('click', async () => { try { await musicControl('skip'); } catch (err) { alert(err.message); } });
+    document.getElementById('music-prev-btn')?.addEventListener('click', async () => { try { await musicControl('previous'); } catch (err) { alert(err.message); } });
+    document.getElementById('music-stop-btn')?.addEventListener('click', async () => { try { await musicControl('stop'); } catch (err) { alert(err.message); } });
+
+    document.getElementById('playlist-refresh-btn')?.addEventListener('click', loadPlaylists);
+    document.getElementById('playlist-create-btn')?.addEventListener('click', async () => {
+        const name = document.getElementById('playlist-name-input')?.value?.trim();
+        if (!name) return alert('Nombre requerido');
+        const res = await fetch('/api/playlists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        if (!res.ok) return alert(data.error || 'No se pudo crear playlist');
+        await loadPlaylists();
+    });
+    document.getElementById('playlist-add-btn')?.addEventListener('click', async () => {
+        const name = document.getElementById('playlist-name-input')?.value?.trim();
+        const query = document.getElementById('playlist-query-input')?.value?.trim();
+        if (!name || !query) return alert('Nombre y track son requeridos');
+        const res = await fetch(`/api/playlists/${encodeURIComponent(name)}/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        });
+        const data = await res.json();
+        if (!res.ok) return alert(data.error || 'No se pudo agregar track');
+        await loadPlaylists();
+    });
+    document.getElementById('playlist-import-spotify-btn')?.addEventListener('click', async () => {
+        const name = document.getElementById('playlist-name-input')?.value?.trim();
+        const spotifyUrl = document.getElementById('playlist-query-input')?.value?.trim();
+        if (!name || !spotifyUrl) return alert('Nombre de playlist y URL de Spotify requeridos');
+        const res = await fetch(`/api/playlists/${encodeURIComponent(name)}/import-spotify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spotifyUrl })
+        });
+        const data = await res.json();
+        if (!res.ok) return alert(data.error || 'No se pudo importar desde Spotify');
+        alert(`Importados ${data.imported} tracks a ${name}`);
+        await loadPlaylists();
+    });
+    document.getElementById('playlist-play-btn')?.addEventListener('click', async () => {
+        const name = document.getElementById('playlist-name-input')?.value?.trim();
+        if (!name) return alert('Nombre requerido');
+        const res = await fetch(`/api/playlists/${encodeURIComponent(name)}/play`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) return alert(data.error || 'No se pudo reproducir playlist');
+        await refreshMusicStatus();
+        await loadPlaylists();
     });
 
-    console.log('✅ Dashboard initialized successfully');
+    document.getElementById('ticket-refresh-btn')?.addEventListener('click', loadTickets);
+    document.getElementById('ticket-create-btn')?.addEventListener('click', async () => {
+        const title = document.getElementById('ticket-title-input')?.value?.trim();
+        if (!title) return alert('Titulo requerido');
+        const res = await fetch('/api/tickets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title })
+        });
+        const data = await res.json();
+        if (!res.ok) return alert(data.error || 'No se pudo crear ticket');
+        await loadTickets();
+    });
+
+    console.log('Dashboard initialized successfully');
     window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {
             sidebar.classList.remove('open');

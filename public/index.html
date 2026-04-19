@@ -98,6 +98,14 @@
                 <span>Música</span>
             </div>
 
+            <div class="nav-item" data-screen="tickets-screen">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4V7z"></path>
+                    <path d="M13 5v14"></path>
+                </svg>
+                <span>Tickets</span>
+            </div>
+
             <div class="nav-label">CONFIGURACIÓN</div>
             <div class="nav-item" data-screen="settings-screen">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -107,6 +115,13 @@
                     </path>
                 </svg>
                 <span>Panel Visual</span>
+            </div>
+            <div class="nav-item" data-screen="env-screen">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                <span>Secretos GitHub</span>
             </div>
         </nav>
 
@@ -147,6 +162,16 @@
 
         <!-- Vistas del Dashboard -->
         <div id="dashboard-view" class="dashboard-content hidden">
+            <section id="guild-switcher" class="glass-panel guild-switcher hidden">
+                <div class="guild-switcher-copy">
+                    <h2>Servidor Activo</h2>
+                    <p>Elige el servidor compartido para cargar sus canales y configuraciones.</p>
+                </div>
+                <div class="guild-switcher-controls">
+                    <label for="guild-selector">Servidor de Discord</label>
+                    <select id="guild-selector" class="glass-input" name="guildId" aria-label="Seleccionar servidor de Discord"></select>
+                </div>
+            </section>
             <!-- PESTAÑA 1: ESCRITORIO -->
             <section id="home-screen" class="screen-view active">
                 <div class="screen-header">
@@ -162,6 +187,27 @@
                     <div class="stat-card">
                         <h3>Miembros Totales</h3>
                         <p id="stat-users">0</p>
+                    </div>
+                </div>
+
+                <div class="glass-panel live-status-card">
+                    <div class="status-header">
+                        <h3>Bot Live Status</h3>
+                        <span id="bot-live-indicator" class="status-pill offline">Offline</span>
+                    </div>
+                    <div class="status-details">
+                        <div class="status-item">
+                            <span class="label">Servidor:</span>
+                            <span id="active-guild-display">---</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Tag:</span>
+                            <span id="bot-tag-display">---</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Reproduciendo:</span>
+                            <span id="bot-music-display">Nada</span>
+                        </div>
                     </div>
                 </div>
 
@@ -270,8 +316,8 @@
                         <div class="theme-card active" data-theme-id="dark">
                             <div class="theme-preview dark-preview">
                                 <div class="preview-circles">
-                                    <span style="background: #6366f1"></span>
-                                    <span style="background: #10b981"></span>
+                                    <span class="theme-circle-primary"></span>
+                                    <span class="theme-circle-accent"></span>
                                 </div>
                             </div>
                             <div class="theme-info">
@@ -283,8 +329,8 @@
                         <div class="theme-card" data-theme-id="light">
                             <div class="theme-preview light-preview">
                                 <div class="preview-circles">
-                                    <span style="background: #4f46e5"></span>
-                                    <span style="background: #10b981"></span>
+                                    <span class="theme-circle-crystal"></span>
+                                    <span class="theme-circle-accent"></span>
                                 </div>
                             </div>
                             <div class="theme-info">
@@ -296,8 +342,8 @@
                         <div class="theme-card" data-theme-id="black">
                             <div class="theme-preview black-preview">
                                 <div class="preview-circles">
-                                    <span style="background: #8b5cf6"></span>
-                                    <span style="background: #f43f5e"></span>
+                                    <span class="theme-circle-midnight"></span>
+                                    <span class="theme-circle-rose"></span>
                                 </div>
                             </div>
                             <div class="theme-info">
@@ -429,52 +475,175 @@
                 </div>
             </section>
 
-            <!-- PESTAÑA 8: MÚSICA (BROWSER-BASED) -->
+            <!-- PESTAÑA 9: VARIABLES DE ENTORNO (SECRETS) -->
+            
+            <!-- PESTA?A 8: M?SICA WEB PLAYER + PLAYLISTS -->
             <section id="music-screen" class="screen-view">
                 <div class="screen-header">
-                    <h2>Sección de <span>Música</span></h2>
-                    <p class="header-desc">Controla el navegador virtual y reproduce YouTube Premium</p>
+                    <h2>M?sica <span>Profesional</span></h2>
+                    <p class="header-desc">Control r?pido del reproductor y gesti?n de playlists sin salir del panel.</p>
                 </div>
 
-                <div class="music-container">
-                    <!-- Player Status Card -->
-                    <div class="glass-panel music-player-card">
-                        <div class="player-visual-area">
-                            <div class="virtual-browser-status">
-                                <div class="status-indicator" id="player-status-dot"></div>
-                                <span id="player-status-text">Navegador Inactivo</span>
-                            </div>
-                            <div class="now-playing-info">
-                                <h3 id="current-track-title">Nada sonando</h3>
-                                <p id="current-track-author">Inicia una búsqueda para empezar</p>
-                            </div>
+                <div class="feature-stack">
+                    <div class="glass-panel feature-card">
+                        <div class="feature-card-head">
+                            <h3>Web Music Player</h3>
+                            <span class="feature-chip">En vivo</span>
                         </div>
 
+                        <div class="form-group compact">
+                            <label for="web-music-query">Buscar canci?n o pegar URL</label>
+                            <input id="web-music-query" class="glass-input" placeholder="Ej: lofi hip hop mix?" />
+                        </div>
+
+                        <div class="action-row wrap">
+                            <button class="btn-primary" id="music-play-btn">Play</button>
+                            <button class="btn-secondary" id="music-queue-btn">Queue</button>
+                            <button class="btn-secondary" id="music-pause-btn">Pause</button>
+                            <button class="btn-secondary" id="music-resume-btn">Resume</button>
+                            <button class="btn-secondary" id="music-skip-btn">Skip</button>
+                            <button class="btn-secondary" id="music-prev-btn">Previous</button>
+                            <button class="btn-danger" id="music-stop-btn">Stop</button>
+                        </div>
+
+                        <div class="player-status-grid">
+                            <div class="status-box"><span class="label">Estado</span><strong id="player-status-text">--</strong></div>
+                            <div class="status-box"><span class="label">Track</span><strong id="current-track-title">--</strong></div>
+                            <div class="status-box"><span class="label">Canal</span><strong id="current-track-author">--</strong></div>
+                        </div>
                     </div>
 
-                    <!-- Setup Sidebar (Monitoring only, no search) -->
-                    <div class="music-sidebar">
-                        <div class="glass-panel premium-session-box">
-                            <div class="box-header">
-                                <h3>💎 YouTube Premium</h3>
-                                <span class="badge-premium">Asociar Sesión</span>
-                            </div>
-                            <label for="yt-session-cookies" class="box-desc">Pega tus cookies de sesión para evitar
-                                anuncios.</label>
-                            <textarea id="yt-session-cookies" class="dark-input" rows="3"
-                                placeholder='[{"name": "SID", "value": "..."}, ...]'></textarea>
-                            <button id="btn-save-yt-session" class="btn-mini">Guardar Sesión</button>
+                    <div class="glass-panel feature-card">
+                        <div class="feature-card-head">
+                            <h3>Custom Playlists</h3>
+                            <span class="feature-chip">Servidor</span>
                         </div>
 
-                        <div class="glass-panel music-console-box">
-                            <div class="box-header">
-                                <h3>📜 Consola de Música</h3>
-                                <span class="badge-live">LIVE</span>
+                        <div class="inline-fields">
+                            <div class="form-group compact">
+                                <label for="playlist-name-input">Nombre playlist</label>
+                                <input id="playlist-name-input" class="glass-input" placeholder="mi-favoritas" />
                             </div>
-                            <div id="music-console-log" class="console-area">
-                                <div class="log-entry system">Conectando con el motor de audio…</div>
+                            <div class="form-group compact">
+                                <label for="playlist-query-input">Track para agregar</label>
+                                <input id="playlist-query-input" class="glass-input" placeholder="URL o b?squeda?" />
                             </div>
                         </div>
+
+                        <div class="action-row wrap">
+                            <button class="btn-primary" id="playlist-create-btn">Crear</button>
+                            <button class="btn-secondary" id="playlist-add-btn">Agregar Track</button>
+                            <button class="btn-secondary" id="playlist-import-spotify-btn">Importar Spotify</button>
+                            <button class="btn-secondary" id="playlist-play-btn">Reproducir</button>
+                            <button class="btn-secondary" id="playlist-refresh-btn">Actualizar</button>
+                        </div>
+
+                        <pre id="playlist-console" class="console-surface">Sin playlists cargadas.</pre>
+                    </div>
+
+                    <div class="glass-panel feature-card">
+                        <div class="feature-card-head">
+                            <h3>Consola de m?sica</h3>
+                            <span class="feature-chip">Logs</span>
+                        </div>
+                        <pre id="music-console-log" class="console-surface">Esperando eventos?</pre>
+                    </div>
+                </div>
+            </section>
+
+            <section id="tickets-screen" class="screen-view">
+                <div class="screen-header">
+                    <h2>Tickets <span>Simple & Pro</span></h2>
+                    <p class="header-desc">Crea y revisa tickets con una interfaz m?s limpia y directa.</p>
+                </div>
+
+                <div class="feature-stack">
+                    <div class="glass-panel feature-card">
+                        <div class="feature-card-head">
+                            <h3>Nuevo ticket</h3>
+                            <span class="feature-chip">Soporte</span>
+                        </div>
+
+                        <div class="form-group compact">
+                            <label for="ticket-title-input">T?tulo</label>
+                            <input id="ticket-title-input" class="glass-input" placeholder="Soporte: problema con?" />
+                        </div>
+
+                        <div class="action-row wrap">
+                            <button class="btn-primary" id="ticket-create-btn">Crear Ticket</button>
+                            <button class="btn-secondary" id="ticket-refresh-btn">Actualizar Lista</button>
+                        </div>
+
+                        <pre id="tickets-console" class="console-surface">Sin tickets.</pre>
+                    </div>
+                </div>
+            </section>
+
+<section id="env-screen" class="screen-view">
+                <div class="screen-header">
+                    <h2>Variables de <span>Entorno</span></h2>
+                    <p class="header-desc">Gestiona secretos y configuraciones globales (Sincronizado con GitHub)</p>
+                </div>
+
+                <div class="glass-panel env-manager-card">
+                    <div class="env-info-alert">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        <span>Los valores se guardan en el archivo <code>.env</code> local y pueden ser sincronizados con GitHub Secrets.</span>
+                    </div>
+
+                    <div id="env-variables-list" class="env-grid">
+                        <!-- Campos dinámicos -->
+                        <div class="form-group">
+                            <label>DISCORD_TOKEN</label>
+                            <div class="secret-input-wrapper">
+                                <input type="password" id="env-DISCORD_TOKEN" class="glass-input" placeholder="••••••••••••••••">
+                                <button class="btn-eye" onclick="toggleSecret('env-DISCORD_TOKEN')">👁️</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>WEB_ADMIN_PASSWORD</label>
+                            <div class="secret-input-wrapper">
+                                <input type="password" id="env-WEB_ADMIN_PASSWORD" class="glass-input" placeholder="••••••••••••••••">
+                                <button class="btn-eye" onclick="toggleSecret('env-WEB_ADMIN_PASSWORD')">👁️</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>PI_PASSWORD</label>
+                            <div class="secret-input-wrapper">
+                                <input type="password" id="env-PI_PASSWORD" class="glass-input" placeholder="••••••••••••••••">
+                                <button class="btn-eye" onclick="toggleSecret('env-PI_PASSWORD')">👁️</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>LAVALINK_URL</label>
+                            <input type="text" id="env-LAVALINK_URL" class="glass-input" placeholder="192.168.1.92:2333">
+                        </div>
+                        <div class="form-group full-width">
+                            <label>🔍 GITHUB_TOKEN (Requerido para Sincronización)</label>
+                            <div class="secret-input-wrapper">
+                                <input type="password" id="env-GITHUB_TOKEN" class="glass-input" placeholder="ghp_••••••••••••••••">
+                                <button class="btn-eye" onclick="toggleSecret('env-GITHUB_TOKEN')">👁️</button>
+                            </div>
+                            <small class="input-hint">Crea uno en <a href="https://github.com/settings/tokens" target="_blank">Settings > Developer settings</a></small>
+                        </div>
+                    </div>
+                    
+                    <div id="github-sync-log" class="console-area hidden">
+                        <div class="log-entry system">🔄 Preparando sincronización...</div>
+                    </div>
+
+                    <div class="env-actions">
+                        <button class="btn-primary" id="save-env-btn">Guardar en .env</button>
+                        <button class="btn-secondary" id="sync-github-btn">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="margin-right: 8px;">
+                                <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+                            </svg>
+                            Sincronizar con GitHub
+                        </button>
                     </div>
                 </div>
             </section>
