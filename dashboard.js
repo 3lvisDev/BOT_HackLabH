@@ -10,6 +10,8 @@ const fs = require('fs');
 const sodium = require('libsodium-wrappers');
 const { buildAccessibleGuilds, resolveSelectedGuildId, buildGuildChannels } = require('./dashboard-guilds');
 const { canManageSecrets } = require('./utils/webPermissions');
+const { runAction } = require('./commands/automod');
+const { resolveGuildLocale } = require('./utils/i18n');
 
 function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, musicManager) {
   const app = express();
@@ -18,6 +20,9 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
   const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
   const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
   const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || `http://localhost:${PORT}/api/auth/callback`;
+  const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
+  const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
+  const SPOTIFY_REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI || `http://localhost:${PORT}/api/spotify/callback`;
 
   // Configurar CORS dinámico para permitir la IP local de la Raspberry Pi
   const corsOptions = {
@@ -121,6 +126,17 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
 
   const getSessionGuilds = (req) => req.session?.user?.guilds || [];
 
+  const getActiveGuildAccess = (req) => {
+    const guilds = getSessionGuilds(req);
+    const selectedGuildId = resolveSelectedGuildId({
+      requestedGuildId: req.query.guildId || req.body?.guildId,
+      sessionGuildId: req.session?.user?.guildId,
+      accessibleGuilds: guilds
+    });
+    if (!selectedGuildId) return null;
+    return guilds.find((guild) => guild.id === selectedGuildId) || null;
+  };
+
   const getActiveGuild = (req) => {
     const selectedGuildId = resolveSelectedGuildId({
       requestedGuildId: req.query.guildId || req.body?.guildId,
@@ -134,6 +150,17 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
 
     req.session.user.guildId = selectedGuildId;
     return discordClient.guilds.cache.get(selectedGuildId) || null;
+  };
+
+  const guildManagerMiddleware = (req, res, next) => {
+    const activeGuild = getActiveGuildAccess(req);
+    if (!activeGuild) {
+      return res.status(400).json({ error: 'No se encontro un servidor activo para la sesion.' });
+    }
+    if (!activeGuild.userCanManage) {
+      return res.status(403).json({ error: 'Necesitas permisos de Administrador o Gestionar servidor para esta accion.' });
+    }
+    return next();
   };
 
   app.get('/api/auth/discord', authLimiter, (req, res) => {
@@ -185,7 +212,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
       const isGuildOwner = (guildsResponse.data || []).some((guild) => guild?.owner && accessibleGuildIds.has(guild.id));
 
       if (accessibleGuilds.length === 0) {
-        return res.send("Acceso denegado. Necesitas compartir un servidor con el bot y tener permisos de administrador.");
+        return res.send("Acceso denegado. Necesitas compartir un servidor con el bot.");
       }
 
       req.session.user = {
@@ -256,7 +283,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
       res.json({ success: true });
   });
 
-  app.post('/api/restart', authMiddleware, strictLimiter, (req, res) => {
+  app.post('/api/restart', authMiddleware, guildManagerMiddleware, strictLimiter, (req, res) => {
       res.json({ success: true });
       setTimeout(() => process.exit(0), 1000);
   });
@@ -275,7 +302,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
     });
   });
 
-  app.get('/api/roles', authMiddleware, async (req, res) => {
+  app.get('/api/roles', authMiddleware, guildManagerMiddleware, async (req, res) => {
     try {
         const guild = getActiveGuild(req);
         if (!guild) return res.json([]);
@@ -290,7 +317,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
     }
   });
 
-  app.get('/api/users', authMiddleware, async (req, res) => {
+  app.get('/api/users', authMiddleware, guildManagerMiddleware, async (req, res) => {
     try {
       const guild = getActiveGuild(req);
       if (!guild) {
@@ -315,7 +342,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
     }
   });
 
-  app.get('/api/guild/channels', authMiddleware, async (req, res) => {
+  app.get('/api/guild/channels', authMiddleware, guildManagerMiddleware, async (req, res) => {
     try {
         const guild = getActiveGuild(req);
         if (!guild) {
@@ -334,7 +361,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
     }
   });
 
-  app.post('/api/users/:userId/roles', authMiddleware, async (req, res) => {
+  app.post('/api/users/:userId/roles', authMiddleware, guildManagerMiddleware, async (req, res) => {
       const { userId } = req.params;
       const { roleId, action } = req.body;
       try {
@@ -348,7 +375,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
       } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  app.get('/api/settings/welcome', authMiddleware, async (req, res) => {
+  app.get('/api/settings/welcome', authMiddleware, guildManagerMiddleware, async (req, res) => {
       try {
           const guild = getActiveGuild(req);
           const row = await db.getSettings(guild.id);
@@ -359,7 +386,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
       } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  app.post('/api/settings/welcome', authMiddleware, async (req, res) => {
+  app.post('/api/settings/welcome', authMiddleware, guildManagerMiddleware, async (req, res) => {
       try {
           const g = getActiveGuild(req);
           await db.updateSettings(g.id, req.body);
@@ -368,14 +395,14 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
   });
 
   // --- Sistema de Logros (Achievements) ---
-  app.get('/api/achievements', authMiddleware, async (req, res) => {
+  app.get('/api/achievements', authMiddleware, guildManagerMiddleware, async (req, res) => {
       try {
           const achievements = await db.getAllAchievements();
           res.json(achievements);
       } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  app.post('/api/achievements', authMiddleware, async (req, res) => {
+  app.post('/api/achievements', authMiddleware, guildManagerMiddleware, async (req, res) => {
       try {
           await db.createAchievement(req.body);
           res.json({ success: true });
@@ -411,7 +438,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
 });
 
   const { validateYouTubeCookies } = require('./music/validation');
-  app.post('/api/music/session', authMiddleware, async (req, res) => {
+  app.post('/api/music/session', authMiddleware, guildManagerMiddleware, async (req, res) => {
       try {
           const cookies = validateYouTubeCookies(req.body.cookies);
           const guild = getActiveGuild(req);
@@ -560,6 +587,173 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
       } catch (err) { res.status(400).json({ error: err.message }); }
   });
 
+  app.get('/api/automod/status', authMiddleware, async (req, res) => {
+      try {
+          const guild = getActiveGuild(req);
+          const locale = resolveGuildLocale(guild);
+          const response = await runAction(guild, locale, { type: 'status' });
+          res.json({ success: true, message: response });
+      } catch (err) { res.status(400).json({ error: err.message }); }
+  });
+
+  app.post('/api/automod/action', authMiddleware, guildManagerMiddleware, async (req, res) => {
+      try {
+          const guild = getActiveGuild(req);
+          const locale = resolveGuildLocale(guild);
+          const action = String(req.body?.action || '').trim().toLowerCase();
+          const word = String(req.body?.word || '').trim();
+
+          const map = {
+              status: { type: 'status' },
+              enable: { type: 'enable' },
+              disable: { type: 'disable' },
+              list: { type: 'list' },
+              add: { type: 'add', word },
+              remove: { type: 'remove', word }
+          };
+
+          if (!map[action]) {
+              return res.status(400).json({ error: 'Accion de AutoMod invalida.' });
+          }
+
+          const message = await runAction(guild, locale, map[action]);
+          res.json({ success: true, message });
+      } catch (err) { res.status(400).json({ error: err.message }); }
+  });
+
+  app.get('/api/spotify/auth', authMiddleware, (req, res) => {
+      if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+          return res.status(400).json({ error: 'Configura SPOTIFY_CLIENT_ID y SPOTIFY_CLIENT_SECRET en .env' });
+      }
+      const state = crypto.randomBytes(16).toString('hex');
+      req.session.spotifyOAuthState = state;
+      const scope = encodeURIComponent('playlist-read-private playlist-read-collaborative');
+      const url = `https://accounts.spotify.com/authorize?response_type=code&client_id=${encodeURIComponent(SPOTIFY_CLIENT_ID)}&scope=${scope}&redirect_uri=${encodeURIComponent(SPOTIFY_REDIRECT_URI)}&state=${state}`;
+      res.redirect(url);
+  });
+
+  app.get('/api/spotify/callback', authMiddleware, async (req, res) => {
+      try {
+          if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+              return res.status(400).send('Spotify no esta configurado en el servidor.');
+          }
+
+          const code = String(req.query?.code || '');
+          const state = String(req.query?.state || '');
+          if (!code || !state || state !== req.session.spotifyOAuthState) {
+              return res.status(400).send('Spotify OAuth invalido o expirado.');
+          }
+
+          const params = new URLSearchParams();
+          params.append('grant_type', 'authorization_code');
+          params.append('code', code);
+          params.append('redirect_uri', SPOTIFY_REDIRECT_URI);
+
+          const basic = Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64');
+          const tokenRes = await axios.post('https://accounts.spotify.com/api/token', params, {
+              headers: {
+                  Authorization: `Basic ${basic}`,
+                  'Content-Type': 'application/x-www-form-urlencoded'
+              }
+          });
+
+          req.session.spotify = {
+              access_token: tokenRes.data.access_token,
+              refresh_token: tokenRes.data.refresh_token,
+              expires_at: Date.now() + (Number(tokenRes.data.expires_in || 3600) * 1000)
+          };
+          req.session.spotifyOAuthState = null;
+          res.redirect('/#music-screen');
+      } catch (err) {
+          res.status(400).send(`Error conectando Spotify: ${err.response?.data?.error_description || err.message}`);
+      }
+  });
+
+  async function getSpotifyAccessToken(req) {
+      const spotify = req.session?.spotify;
+      if (!spotify?.access_token) return null;
+      if (spotify.expires_at && Date.now() < spotify.expires_at - 30_000) return spotify.access_token;
+
+      if (!spotify.refresh_token) return null;
+      const params = new URLSearchParams();
+      params.append('grant_type', 'refresh_token');
+      params.append('refresh_token', spotify.refresh_token);
+      const basic = Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64');
+      const tokenRes = await axios.post('https://accounts.spotify.com/api/token', params, {
+          headers: {
+              Authorization: `Basic ${basic}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
+          }
+      });
+
+      req.session.spotify = {
+          ...spotify,
+          access_token: tokenRes.data.access_token,
+          refresh_token: tokenRes.data.refresh_token || spotify.refresh_token,
+          expires_at: Date.now() + (Number(tokenRes.data.expires_in || 3600) * 1000)
+      };
+      return req.session.spotify.access_token;
+  }
+
+  app.get('/api/spotify/status', authMiddleware, async (req, res) => {
+      const token = await getSpotifyAccessToken(req).catch(() => null);
+      res.json({ connected: Boolean(token) });
+  });
+
+  app.get('/api/spotify/playlists', authMiddleware, async (req, res) => {
+      try {
+          const token = await getSpotifyAccessToken(req);
+          if (!token) return res.status(401).json({ error: 'Conecta tu cuenta de Spotify desde el panel.' });
+
+          const response = await axios.get('https://api.spotify.com/v1/me/playlists?limit=50', {
+              headers: { Authorization: `Bearer ${token}` }
+          });
+
+          const playlists = (response.data?.items || []).map((item) => ({
+              id: item.id,
+              name: item.name,
+              tracks: item.tracks?.total || 0,
+              owner: item.owner?.display_name || item.owner?.id || 'unknown',
+              external_url: item.external_urls?.spotify || null
+          }));
+          res.json({ playlists });
+      } catch (err) {
+          res.status(400).json({ error: err.response?.data?.error?.message || err.message });
+      }
+  });
+
+  app.post('/api/playlists/:name/import-spotify-account', authMiddleware, async (req, res) => {
+      try {
+          const guild = getActiveGuild(req);
+          const playlistId = String(req.body?.spotifyPlaylistId || '').trim();
+          if (!playlistId) return res.status(400).json({ error: 'Falta spotifyPlaylistId' });
+
+          const token = await getSpotifyAccessToken(req);
+          if (!token) return res.status(401).json({ error: 'Conecta tu cuenta de Spotify desde el panel.' });
+
+          const trackQueries = [];
+          let nextUrl = `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}/tracks?limit=100`;
+          while (nextUrl && trackQueries.length < 500) {
+              const page = await axios.get(nextUrl, { headers: { Authorization: `Bearer ${token}` } });
+              for (const item of page.data?.items || []) {
+                  const track = item?.track;
+                  if (!track?.name) continue;
+                  const artists = (track.artists || []).map((a) => a.name).filter(Boolean).join(' ');
+                  trackQueries.push(`${artists} ${track.name}`.trim());
+              }
+              nextUrl = page.data?.next || null;
+          }
+
+          if (!trackQueries.length) return res.status(400).json({ error: 'No se encontraron tracks en esa playlist.' });
+          for (const query of trackQueries) {
+              await db.addPlaylistItem(guild.id, req.params.name, query, req.session?.user?.id);
+          }
+          res.json({ success: true, imported: trackQueries.length });
+      } catch (err) {
+          res.status(400).json({ error: err.response?.data?.error?.message || err.message });
+      }
+  });
+
   app.get('/api/tickets', authMiddleware, async (req, res) => {
       try {
           const guild = getActiveGuild(req);
@@ -690,7 +884,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
       }
   });
 
-  app.post('/api/setup', authMiddleware, strictLimiter, async (req, res) => {
+  app.post('/api/setup', authMiddleware, guildManagerMiddleware, strictLimiter, async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     const admins = (req.headers['x-admins'] || "").split(',').filter(Boolean);
     const mods = (req.headers['x-mods'] || "").split(',').filter(Boolean);

@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentUser = null;
     let availableGuilds = [];
     let currentGuildId = null;
+    let currentGuildAccess = null;
 
     // --- DOM Elements ---
     const loginView = document.getElementById('login-view');
@@ -101,6 +102,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (screenId === 'music-screen') {
                 refreshMusicStatus();
                 loadPlaylists();
+                refreshSpotifyStatus();
+                loadSpotifyPlaylists();
+            }
+            if (screenId === 'automod-screen') {
+                automodStatus();
             }
             if (screenId === 'tickets-screen') {
                 loadTickets();
@@ -186,6 +192,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!canManageSecrets && window.location.hash === '#env-screen') {
             window.location.hash = 'home-screen';
         }
+
+        applyGuildPermissionVisibility();
+    }
+
+    function applyGuildPermissionVisibility() {
+        currentGuildAccess = availableGuilds.find((g) => g.id === currentGuildId) || null;
+        const canManageGuild = Boolean(currentGuildAccess?.userCanManage);
+        const adminScreens = ['users-screen', 'roles-screen', 'welcome-screen', 'achievements-screen'];
+
+        adminScreens.forEach((screenId) => {
+            const nav = document.querySelector(`.nav-item[data-screen="${screenId}"]`);
+            const view = document.getElementById(screenId);
+            if (nav) nav.classList.toggle('hidden', !canManageGuild);
+            if (view) view.classList.toggle('hidden', !canManageGuild);
+        });
     }
 
     async function loadGuilds() {
@@ -196,7 +217,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             availableGuilds = data.guilds || [];
             currentGuildId = data.activeGuildId || availableGuilds[0]?.id || null;
+            currentGuildAccess = availableGuilds.find((g) => g.id === currentGuildId) || null;
             renderGuildSelector();
+            applyGuildPermissionVisibility();
         } catch (err) {
             console.error('Error loading guilds', err);
         }
@@ -231,6 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             currentGuildId = guildId;
+            currentGuildAccess = availableGuilds.find((g) => g.id === currentGuildId) || null;
             await loadGuilds();
             await updateStats();
             await refreshData();
@@ -239,6 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const logsScreen = document.getElementById('logs-screen');
             const achievementsScreen = document.getElementById('achievements-screen');
             const musicScreen = document.getElementById('music-screen');
+            const automodScreen = document.getElementById('automod-screen');
             const ticketsScreen = document.getElementById('tickets-screen');
 
             if (logsScreen?.classList.contains('active')) {
@@ -251,6 +276,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 await refreshMusicStatus();
                 await loadMusicLogs();
                 await loadPlaylists();
+                await refreshSpotifyStatus();
+                await loadSpotifyPlaylists();
+            }
+            if (automodScreen?.classList.contains('active')) {
+                await automodStatus();
             }
             if (ticketsScreen?.classList.contains('active')) {
                 await loadTickets();
@@ -905,7 +935,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (trackTitle) trackTitle.innerText = data.currentTrack || 'Reproduciendo...';
                 if (trackAuthor) trackAuthor.innerText = data.channelId || data.channel || 'Canal de voz activo';
             } else {
-                if (statusText) statusText.innerText = 'Sin reproduccion';
+                if (statusText) statusText.innerText = 'Sin reproducción';
                 if (trackTitle) trackTitle.innerText = 'Nada sonando';
                 if (trackAuthor) trackAuthor.innerText = 'Usa Play o Queue para comenzar';
             }
@@ -919,7 +949,7 @@ document.addEventListener('DOMContentLoaded', () => {
             body: JSON.stringify({ action, query })
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error en control de musica');
+        if (!res.ok) throw new Error(data.error || 'Error en control de música');
         await refreshMusicStatus();
         return data;
     }
@@ -934,8 +964,74 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         output.textContent = data.length
-            ? data.map((p) => `- ${p.name} (${p.item_count} tracks)`).join('\n')
+            ? data.map((p, index) => `${index + 1}. ${p.name} • ${p.item_count} tracks`).join('\n')
             : 'Sin playlists cargadas.';
+    }
+
+    async function refreshSpotifyStatus() {
+        const statusLabel = document.getElementById('spotify-account-status');
+        if (!statusLabel) return;
+        try {
+            const res = await fetch('/api/spotify/status');
+            const data = await res.json();
+            statusLabel.textContent = data.connected
+                ? 'Spotify conectado. Ya puedes cargar playlists.'
+                : 'Spotify no conectado.';
+        } catch (_) {
+            statusLabel.textContent = 'No se pudo validar Spotify.';
+        }
+    }
+
+    async function loadSpotifyPlaylists() {
+        const select = document.getElementById('spotify-account-playlist-select');
+        const statusLabel = document.getElementById('spotify-account-status');
+        if (!select) return;
+        select.innerHTML = '<option value="">Cargando playlists...</option>';
+        try {
+            const res = await fetch('/api/spotify/playlists');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'No se pudieron cargar playlists de Spotify');
+            const playlists = data.playlists || [];
+            if (!playlists.length) {
+                select.innerHTML = '<option value="">No se encontraron playlists</option>';
+                if (statusLabel) statusLabel.textContent = 'Tu cuenta no tiene playlists disponibles.';
+                return;
+            }
+            select.innerHTML = '<option value="">Selecciona una playlist de Spotify</option>' +
+                playlists.map((p) => `<option value="${p.id}">${p.name} (${p.tracks} tracks)</option>`).join('');
+            if (statusLabel) statusLabel.textContent = `Se cargaron ${playlists.length} playlists de Spotify.`;
+        } catch (err) {
+            select.innerHTML = '<option value="">Spotify no disponible</option>';
+            if (statusLabel) statusLabel.textContent = err.message;
+        }
+    }
+
+    async function automodAction(action, word = '') {
+        const output = document.getElementById('automod-console');
+        try {
+            const res = await fetch('/api/automod/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, word })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error en AutoMod');
+            if (output) output.textContent = data.message || 'Acción completada.';
+        } catch (err) {
+            if (output) output.textContent = `Error: ${err.message}`;
+        }
+    }
+
+    async function automodStatus() {
+        const output = document.getElementById('automod-console');
+        try {
+            const res = await fetch('/api/automod/status');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'No se pudo cargar estado');
+            if (output) output.textContent = data.message || 'Sin estado.';
+        } catch (err) {
+            if (output) output.textContent = `Error: ${err.message}`;
+        }
     }
 
     async function loadTickets() {
@@ -962,14 +1058,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('music-play-btn')?.addEventListener('click', async () => {
         try {
             const query = document.getElementById('web-music-query')?.value?.trim();
-            if (!query) return alert('Escribe una busqueda o URL.');
+            if (!query) return alert('Escribe una búsqueda o URL.');
             await musicControl('play', query);
         } catch (err) { alert(err.message); }
     });
     document.getElementById('music-queue-btn')?.addEventListener('click', async () => {
         try {
             const query = document.getElementById('web-music-query')?.value?.trim();
-            if (!query) return alert('Escribe una busqueda o URL.');
+            if (!query) return alert('Escribe una búsqueda o URL.');
             await musicControl('queue', query);
         } catch (err) { alert(err.message); }
     });
@@ -1019,6 +1115,25 @@ document.addEventListener('DOMContentLoaded', () => {
         alert(`Importados ${data.imported} tracks a ${name}`);
         await loadPlaylists();
     });
+    document.getElementById('spotify-connect-btn')?.addEventListener('click', () => {
+        window.location.href = '/api/spotify/auth';
+    });
+    document.getElementById('spotify-refresh-btn')?.addEventListener('click', loadSpotifyPlaylists);
+    document.getElementById('spotify-import-account-btn')?.addEventListener('click', async () => {
+        const name = document.getElementById('playlist-name-input')?.value?.trim();
+        const spotifyPlaylistId = document.getElementById('spotify-account-playlist-select')?.value?.trim();
+        if (!name) return alert('Define primero el nombre de playlist local.');
+        if (!spotifyPlaylistId) return alert('Selecciona una playlist de Spotify.');
+        const res = await fetch(`/api/playlists/${encodeURIComponent(name)}/import-spotify-account`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spotifyPlaylistId })
+        });
+        const data = await res.json();
+        if (!res.ok) return alert(data.error || 'No se pudo importar playlist de Spotify');
+        alert(`Importados ${data.imported} tracks en ${name}`);
+        await loadPlaylists();
+    });
     document.getElementById('playlist-play-btn')?.addEventListener('click', async () => {
         const name = document.getElementById('playlist-name-input')?.value?.trim();
         if (!name) return alert('Nombre requerido');
@@ -1032,7 +1147,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('ticket-refresh-btn')?.addEventListener('click', loadTickets);
     document.getElementById('ticket-create-btn')?.addEventListener('click', async () => {
         const title = document.getElementById('ticket-title-input')?.value?.trim();
-        if (!title) return alert('Titulo requerido');
+        if (!title) return alert('Título requerido');
         const res = await fetch('/api/tickets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1041,6 +1156,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await res.json();
         if (!res.ok) return alert(data.error || 'No se pudo crear ticket');
         await loadTickets();
+    });
+
+    document.getElementById('automod-status-btn')?.addEventListener('click', automodStatus);
+    document.getElementById('automod-enable-btn')?.addEventListener('click', () => automodAction('enable'));
+    document.getElementById('automod-disable-btn')?.addEventListener('click', () => automodAction('disable'));
+    document.getElementById('automod-list-btn')?.addEventListener('click', () => automodAction('list'));
+    document.getElementById('automod-add-btn')?.addEventListener('click', () => {
+        const word = document.getElementById('automod-word-input')?.value?.trim();
+        if (!word) return alert('Escribe una palabra para AutoMod.');
+        automodAction('add', word);
+    });
+    document.getElementById('automod-remove-btn')?.addEventListener('click', () => {
+        const word = document.getElementById('automod-word-input')?.value?.trim();
+        if (!word) return alert('Escribe una palabra para AutoMod.');
+        automodAction('remove', word);
     });
 
     console.log('Dashboard initialized successfully');

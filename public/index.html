@@ -10,7 +10,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=1.0.1">
+    <link rel="stylesheet" href="style.css?v=1.0.2">
     <script src="sanitize.js"></script>
 </head>
 
@@ -96,6 +96,13 @@
                     <circle cx="18" cy="16" r="3"></circle>
                 </svg>
                 <span>Música</span>
+            </div>
+            <div class="nav-item" data-screen="automod-screen">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    <path d="M9 12l2 2 4-4"></path>
+                </svg>
+                <span>AutoMod</span>
             </div>
 
             <div class="nav-item" data-screen="tickets-screen">
@@ -477,11 +484,11 @@
 
             <!-- PESTAÑA 9: VARIABLES DE ENTORNO (SECRETS) -->
             
-            <!-- PESTA?A 8: M?SICA WEB PLAYER + PLAYLISTS -->
+            <!-- PESTAÑA 8: MÚSICA WEB PLAYER + PLAYLISTS -->
             <section id="music-screen" class="screen-view">
                 <div class="screen-header">
-                    <h2>M?sica <span>Profesional</span></h2>
-                    <p class="header-desc">Control r?pido del reproductor y gesti?n de playlists sin salir del panel.</p>
+                    <h2>Música <span>Profesional</span></h2>
+                    <p class="header-desc">Control premium del reproductor y playlists desde un panel elegante y rápido.</p>
                 </div>
 
                 <div class="feature-stack">
@@ -492,8 +499,8 @@
                         </div>
 
                         <div class="form-group compact">
-                            <label for="web-music-query">Buscar canci?n o pegar URL</label>
-                            <input id="web-music-query" class="glass-input" placeholder="Ej: lofi hip hop mix?" />
+                            <label for="web-music-query">Buscar canción o pegar URL</label>
+                            <input id="web-music-query" class="glass-input" placeholder="Ej: lofi hip hop mix…" />
                         </div>
 
                         <div class="action-row wrap">
@@ -521,12 +528,12 @@
 
                         <div class="inline-fields">
                             <div class="form-group compact">
-                                <label for="playlist-name-input">Nombre playlist</label>
+                                <label for="playlist-name-input">Nombre de playlist</label>
                                 <input id="playlist-name-input" class="glass-input" placeholder="mi-favoritas" />
                             </div>
                             <div class="form-group compact">
                                 <label for="playlist-query-input">Track para agregar</label>
-                                <input id="playlist-query-input" class="glass-input" placeholder="URL o b?squeda?" />
+                                <input id="playlist-query-input" class="glass-input" placeholder="URL o búsqueda…" />
                             </div>
                         </div>
 
@@ -538,15 +545,70 @@
                             <button class="btn-secondary" id="playlist-refresh-btn">Actualizar</button>
                         </div>
 
+                        <div class="spotify-account-panel">
+                            <div class="feature-card-head">
+                                <h3>Spotify Account</h3>
+                                <span class="feature-chip">Conecta tu cuenta</span>
+                            </div>
+                            <div class="action-row wrap">
+                                <button class="btn-secondary" id="spotify-connect-btn">Conectar Spotify</button>
+                                <button class="btn-secondary" id="spotify-refresh-btn">Cargar Mis Playlists</button>
+                            </div>
+                            <div class="inline-fields">
+                                <div class="form-group compact">
+                                    <label for="spotify-account-playlist-select">Playlists de tu cuenta</label>
+                                    <select id="spotify-account-playlist-select" class="glass-input">
+                                        <option value="">Selecciona una playlist de Spotify</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="action-row wrap">
+                                <button class="btn-primary" id="spotify-import-account-btn">Importar al nombre actual</button>
+                            </div>
+                            <small id="spotify-account-status" class="muted-text">Spotify no conectado.</small>
+                        </div>
+
                         <pre id="playlist-console" class="console-surface">Sin playlists cargadas.</pre>
                     </div>
 
                     <div class="glass-panel feature-card">
                         <div class="feature-card-head">
-                            <h3>Consola de m?sica</h3>
+                            <h3>Consola de música</h3>
                             <span class="feature-chip">Logs</span>
                         </div>
-                        <pre id="music-console-log" class="console-surface">Esperando eventos?</pre>
+                        <pre id="music-console-log" class="console-surface">Esperando eventos…</pre>
+                    </div>
+                </div>
+            </section>
+
+            <section id="automod-screen" class="screen-view">
+                <div class="screen-header">
+                    <h2>AutoMod <span>Shield</span></h2>
+                    <p class="header-desc">Configura filtros de palabras y control automático de moderación.</p>
+                </div>
+                <div class="feature-stack">
+                    <div class="glass-panel feature-card">
+                        <div class="feature-card-head">
+                            <h3>Control de AutoMod</h3>
+                            <span class="feature-chip">Moderación</span>
+                        </div>
+                        <div class="action-row wrap">
+                            <button class="btn-secondary" id="automod-status-btn">Estado</button>
+                            <button class="btn-primary" id="automod-enable-btn">Activar</button>
+                            <button class="btn-danger" id="automod-disable-btn">Desactivar</button>
+                            <button class="btn-secondary" id="automod-list-btn">Listar palabras</button>
+                        </div>
+                        <div class="inline-fields">
+                            <div class="form-group compact">
+                                <label for="automod-word-input">Palabra</label>
+                                <input id="automod-word-input" class="glass-input" placeholder="Ej: spam" />
+                            </div>
+                        </div>
+                        <div class="action-row wrap">
+                            <button class="btn-secondary" id="automod-add-btn">Agregar palabra</button>
+                            <button class="btn-secondary" id="automod-remove-btn">Eliminar palabra</button>
+                        </div>
+                        <pre id="automod-console" class="console-surface">AutoMod listo.</pre>
                     </div>
                 </div>
             </section>
@@ -554,7 +616,7 @@
             <section id="tickets-screen" class="screen-view">
                 <div class="screen-header">
                     <h2>Tickets <span>Simple & Pro</span></h2>
-                    <p class="header-desc">Crea y revisa tickets con una interfaz m?s limpia y directa.</p>
+                    <p class="header-desc">Crea y revisa tickets con una interfaz más limpia y directa.</p>
                 </div>
 
                 <div class="feature-stack">
@@ -565,8 +627,8 @@
                         </div>
 
                         <div class="form-group compact">
-                            <label for="ticket-title-input">T?tulo</label>
-                            <input id="ticket-title-input" class="glass-input" placeholder="Soporte: problema con?" />
+                            <label for="ticket-title-input">Título</label>
+                            <input id="ticket-title-input" class="glass-input" placeholder="Soporte: problema con…" />
                         </div>
 
                         <div class="action-row wrap">
@@ -659,7 +721,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=1.0.1"></script>
+    <script src="script.js?v=1.0.3"></script>
 </body>
 
 </html>

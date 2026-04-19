@@ -4,6 +4,30 @@ const path = require('path');
 
 let dbPromise;
 
+async function ensureColumn(db, table, column, typeAndDefault) {
+    try {
+        await db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${typeAndDefault}`);
+    } catch (err) {
+        if (!String(err.message || '').toLowerCase().includes('duplicate column name')) {
+            throw err;
+        }
+    }
+}
+
+async function ensureMusicSettingsSchema(db) {
+    await ensureColumn(db, 'music_settings', 'radio_enabled', 'INTEGER DEFAULT 1');
+    await ensureColumn(db, 'music_settings', 'radio_genre', 'TEXT');
+    await ensureColumn(db, 'music_settings', 'dj_auto_enabled', 'INTEGER DEFAULT 0');
+    await ensureColumn(db, 'music_settings', 'dj_fallback', 'TEXT DEFAULT \'radio\'');
+    await ensureColumn(db, 'music_settings', 'stream_url', 'TEXT');
+    await ensureColumn(db, 'music_settings', 'last_query', 'TEXT');
+    await ensureColumn(db, 'music_settings', 'last_track_title', 'TEXT');
+    await ensureColumn(db, 'music_settings', 'last_position_ms', 'INTEGER DEFAULT 0');
+    await ensureColumn(db, 'music_settings', 'last_paused', 'INTEGER DEFAULT 0');
+    await ensureColumn(db, 'music_settings', 'last_was_playing', 'INTEGER DEFAULT 0');
+    await ensureColumn(db, 'music_settings', 'last_is_live_stream', 'INTEGER DEFAULT 0');
+}
+
 async function initDB() {
     if (!dbPromise) {
         dbPromise = open({
@@ -59,7 +83,18 @@ async function initDB() {
                     message TEXT,
                     metadata TEXT
                 );
+                CREATE TABLE IF NOT EXISTS tickets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    channel_id TEXT,
+                    status TEXT DEFAULT 'open',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    closed_at DATETIME
+                );
             `);
+                await ensureMusicSettingsSchema(db);
                 return db;
             } catch (err) {
                 console.error(`\n❌ Error en inicialización de BD: ${err.message}`);
@@ -187,16 +222,53 @@ async function getMusicSettings(guildId) {
 
 async function updateMusicSettings(guildId, settings) {
     const db = await initDB();
-    const { yt_cookies, volume, last_channel_id } = settings;
-    const encryptedCookies = encrypt(yt_cookies);
-    
-    await db.run(`INSERT INTO music_settings (guild_id, yt_cookies, volume, last_channel_id)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(guild_id) DO UPDATE SET
+    const current = await db.get(`SELECT * FROM music_settings WHERE guild_id = ?`, [guildId]) || {};
+    const next = { ...current, ...settings, guild_id: guildId };
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'yt_cookies')) {
+        next.yt_cookies = encrypt(settings.yt_cookies);
+    }
+
+    await db.run(
+        `INSERT INTO music_settings (
+            guild_id, yt_cookies, volume, last_channel_id, radio_enabled, radio_genre,
+            dj_auto_enabled, dj_fallback, stream_url, last_query, last_track_title,
+            last_position_ms, last_paused, last_was_playing, last_is_live_stream
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(guild_id) DO UPDATE SET
             yt_cookies = excluded.yt_cookies,
             volume = excluded.volume,
-            last_channel_id = excluded.last_channel_id`,
-    [guildId, encryptedCookies, volume, last_channel_id]);
+            last_channel_id = excluded.last_channel_id,
+            radio_enabled = excluded.radio_enabled,
+            radio_genre = excluded.radio_genre,
+            dj_auto_enabled = excluded.dj_auto_enabled,
+            dj_fallback = excluded.dj_fallback,
+            stream_url = excluded.stream_url,
+            last_query = excluded.last_query,
+            last_track_title = excluded.last_track_title,
+            last_position_ms = excluded.last_position_ms,
+            last_paused = excluded.last_paused,
+            last_was_playing = excluded.last_was_playing,
+            last_is_live_stream = excluded.last_is_live_stream`,
+        [
+            guildId,
+            next.yt_cookies || null,
+            next.volume ?? 100,
+            next.last_channel_id || null,
+            next.radio_enabled ?? 1,
+            next.radio_genre || null,
+            next.dj_auto_enabled ?? 0,
+            next.dj_fallback || 'radio',
+            next.stream_url || null,
+            next.last_query || null,
+            next.last_track_title || null,
+            Number.isFinite(next.last_position_ms) ? Math.max(0, Math.floor(next.last_position_ms)) : 0,
+            next.last_paused ? 1 : 0,
+            next.last_was_playing ? 1 : 0,
+            next.last_is_live_stream ? 1 : 0
+        ]
+    );
 }
 
 async function logMusicEvent(guildId, level, message, metadata) {
@@ -215,9 +287,42 @@ async function getMusicLogs(guildId, limit = 50) {
     );
 }
 
+async function createTicket(guildId, userId, title, channelId = null) {
+    const db = await initDB();
+    const result = await db.run(
+        `INSERT INTO tickets (guild_id, user_id, title, channel_id, status) VALUES (?, ?, ?, ?, 'open')`,
+        [guildId, userId, title, channelId]
+    );
+    return db.get(`SELECT * FROM tickets WHERE id = ?`, [result.lastID]);
+}
+
+async function getTickets(guildId, status = null) {
+    const db = await initDB();
+    if (!status) {
+        return db.all(
+            `SELECT * FROM tickets WHERE guild_id = ? ORDER BY id DESC`,
+            [guildId]
+        );
+    }
+    return db.all(
+        `SELECT * FROM tickets WHERE guild_id = ? AND status = ? ORDER BY id DESC`,
+        [guildId, status]
+    );
+}
+
+async function closeTicket(guildId, ticketId) {
+    const db = await initDB();
+    await db.run(
+        `UPDATE tickets SET status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE guild_id = ? AND id = ?`,
+        [guildId, ticketId]
+    );
+    return db.get(`SELECT * FROM tickets WHERE guild_id = ? AND id = ?`, [guildId, ticketId]);
+}
+
 module.exports = { 
     initDB, getGuildConfig, setGuildConfig, getSettings, updateSettings, 
     updateUserStats, getAllAchievements, createAchievement, getUserAchievements, earnAchievement,
     getMusicSettings, updateMusicSettings, logMusicEvent, getMusicLogs,
+    createTicket, getTickets, closeTicket,
     encrypt, decrypt
 };

@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 
 const token = process.env.DISCORD_TOKEN;
@@ -94,6 +94,44 @@ const commands = [
     .setDescription('Devuelve emoji de aplicación por nombre o fallback')
     .addStringOption((option) => option.setName('name').setDescription('Nombre del emoji app').setRequired(true))
     .addStringOption((option) => option.setName('fallback').setDescription('Texto/emote fallback').setRequired(false)),
+  new SlashCommandBuilder()
+    .setName('automod_status')
+    .setDescription('Muestra estado de AutoMod')
+    .setDescriptionLocalizations({ 'en-US': 'Shows AutoMod status', 'en-GB': 'Shows AutoMod status' }),
+  new SlashCommandBuilder()
+    .setName('automod_enable')
+    .setDescription('Activa AutoMod')
+    .setDescriptionLocalizations({ 'en-US': 'Enables AutoMod', 'en-GB': 'Enables AutoMod' }),
+  new SlashCommandBuilder()
+    .setName('automod_disable')
+    .setDescription('Desactiva AutoMod')
+    .setDescriptionLocalizations({ 'en-US': 'Disables AutoMod', 'en-GB': 'Disables AutoMod' }),
+  new SlashCommandBuilder()
+    .setName('automod_word_add')
+    .setDescription('Agrega palabra a AutoMod')
+    .setDescriptionLocalizations({ 'en-US': 'Adds keyword to AutoMod', 'en-GB': 'Adds keyword to AutoMod' })
+    .addStringOption((option) =>
+      option
+        .setName('word')
+        .setDescription('Palabra a bloquear')
+        .setDescriptionLocalizations({ 'en-US': 'Keyword to block', 'en-GB': 'Keyword to block' })
+        .setRequired(true)
+    ),
+  new SlashCommandBuilder()
+    .setName('automod_word_remove')
+    .setDescription('Elimina palabra de AutoMod')
+    .setDescriptionLocalizations({ 'en-US': 'Removes keyword from AutoMod', 'en-GB': 'Removes keyword from AutoMod' })
+    .addStringOption((option) =>
+      option
+        .setName('word')
+        .setDescription('Palabra a eliminar')
+        .setDescriptionLocalizations({ 'en-US': 'Keyword to remove', 'en-GB': 'Keyword to remove' })
+        .setRequired(true)
+    ),
+  new SlashCommandBuilder()
+    .setName('automod_word_list')
+    .setDescription('Lista palabras de AutoMod')
+    .setDescriptionLocalizations({ 'en-US': 'Lists AutoMod keywords', 'en-GB': 'Lists AutoMod keywords' })
 ].map((command) => command.toJSON());
 
 async function main() {

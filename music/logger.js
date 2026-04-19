@@ -37,4 +37,8 @@ async function logMusicEvent(guildId, level, message, metadata = {}) {
     }
 }
 
-module.exports = { logMusicEvent, setSocketServer };
+async function logSystemEvent(guildId, level, message, metadata = {}) {
+    return logMusicEvent(guildId || null, level, message, metadata);
+}
+
+module.exports = { logMusicEvent, logSystemEvent, setSocketServer };

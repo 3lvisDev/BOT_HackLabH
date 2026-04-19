@@ -1,7 +1,11 @@
 const db = require('../db');
 
 function matches(content, names) {
-    return names.some((name) => content.startsWith(`!${name}`) || content.startsWith(`.${name}`));
+    const value = String(content || '').trim();
+    return names.some((name) => {
+        const regex = new RegExp(`^([!.])${name}\\b`, 'i');
+        return regex.test(value);
+    });
 }
 
 function arg(content, command) {

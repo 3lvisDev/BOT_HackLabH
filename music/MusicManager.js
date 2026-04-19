@@ -14,6 +14,9 @@ class MusicManager {
         this.liveStreamState = new Map();
         this.djAutoState = new Map();
         this.djAutoInterval = null;
+        this.playbackSnapshotInterval = null;
+        this.restoreInProgress = new Set();
+        this.nodeReady = false;
 
         if (!this.hasLavalinkConfig) {
             this.kazagumo = null;
@@ -47,12 +50,21 @@ class MusicManager {
             reconnectInterval: 5000
         });
 
-        this.kazagumo.shoukaku.on('ready', (name) => console.log(`[Lavalink] Nodo ${name} conectado correctamente.`));
+        this.kazagumo.shoukaku.on('ready', (name) => {
+            this.nodeReady = true;
+            console.log(`[Lavalink] Nodo ${name} conectado correctamente.`);
+        });
         this.kazagumo.shoukaku.on('error', (name, error) => console.error(`[Lavalink] Error en nodo ${name}:`, error));
 
         this.kazagumo.on('playerStart', (player, track) => {
+            if (typeof player.setLoop === 'function' && player.loop !== 'none') {
+                player.setLoop('none');
+            }
             logMusicEvent(player.guildId, 'info', `Reproduciendo: ${track.title}`);
             this.rememberTrackForRadio(player.guildId, track);
+            this.persistCurrentPlayback(player.guildId, player, track).catch((error) => {
+                console.error('[MusicManager] No se pudo guardar snapshot de reproduccion:', error.message);
+            });
             applyBotPresence(this.client, {
                 active: true,
                 currentTrack: track.title,
@@ -82,6 +94,7 @@ class MusicManager {
         });
 
         this.startDjAutoWatcher();
+        this.startPlaybackSnapshotWatcher();
     }
 
     getRadioState(guildId) {
@@ -90,6 +103,7 @@ class MusicManager {
                 enabled: true,
                 genreSeed: null,
                 recentIdentifiers: [],
+                recentFingerprints: [],
                 lastTrack: null
             });
         }
@@ -120,15 +134,40 @@ class MusicManager {
         if (!guildId || !track) return;
 
         const state = this.getRadioState(guildId);
+        const fingerprint = this.buildTrackFingerprint(track);
         state.lastTrack = {
             identifier: track.identifier,
             title: track.title,
-            author: track.author
+            author: track.author,
+            fingerprint
         };
 
         if (track.identifier) {
             state.recentIdentifiers = [track.identifier, ...state.recentIdentifiers.filter((id) => id !== track.identifier)].slice(0, 12);
         }
+        if (fingerprint) {
+            state.recentFingerprints = [fingerprint, ...state.recentFingerprints.filter((fp) => fp !== fingerprint)].slice(0, 20);
+        }
+    }
+
+    normalizeText(text) {
+        return String(text || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim();
+    }
+
+    buildTrackFingerprint(track) {
+        const rawTitle = this.normalizeText(track?.title)
+            .replace(/\b(official|video|lyric|lyrics|audio|visualizer|mv|hd|4k|remaster|version en vivo|live)\b/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const title = rawTitle;
+        const author = this.normalizeText(track?.author);
+        const base = `${author}|${title}`.trim();
+        return base || null;
     }
 
     setLiveStream(guildId, streamUrl) {
@@ -194,6 +233,28 @@ class MusicManager {
         }, 15000);
     }
 
+    startPlaybackSnapshotWatcher() {
+        if (this.playbackSnapshotInterval || !this.kazagumo) return;
+
+        this.playbackSnapshotInterval = setInterval(() => {
+            this.snapshotActivePlayers().catch((error) => {
+                console.error('[MusicManager] Error guardando snapshot de reproduccion:', error);
+            });
+        }, 10000);
+    }
+
+    async snapshotActivePlayers() {
+        if (!this.kazagumo?.players) return;
+        for (const player of this.kazagumo.players.values()) {
+            if (!player?.guildId) continue;
+            if (!player.playing && !player.paused) continue;
+            await this.persistCurrentPlayback(player.guildId, player, player.queue?.current, {
+                last_paused: player.paused ? 1 : 0,
+                last_was_playing: 1
+            });
+        }
+    }
+
     async checkDjAutoStreams() {
         for (const [guildId, state] of this.djAutoState.entries()) {
             if (!state.enabled) continue;
@@ -253,10 +314,13 @@ class MusicManager {
         }
 
         const lastTrack = state.lastTrack;
-
-        if (!lastTrack?.title) return null;
-
-        return `${lastTrack.author || ''} ${lastTrack.title}`.trim();
+        if (lastTrack?.author) {
+            return `${lastTrack.author} mix`;
+        }
+        if (lastTrack?.title) {
+            return `${lastTrack.title} mix`;
+        }
+        return 'top global hits mix';
     }
 
     async findRelatedTrack(guildId) {
@@ -265,7 +329,24 @@ class MusicManager {
 
         const result = await this.kazagumo.search(query);
         const state = this.getRadioState(guildId);
-        return result.tracks.find((track) => !state.recentIdentifiers.includes(track.identifier)) || null;
+        let candidate = result.tracks.find((track) => {
+            const fingerprint = this.buildTrackFingerprint(track);
+            const sameId = Boolean(track.identifier) && state.recentIdentifiers.includes(track.identifier);
+            const sameFingerprint = Boolean(fingerprint) && state.recentFingerprints.includes(fingerprint);
+            return !sameId && !sameFingerprint;
+        }) || null;
+
+        if (!candidate && state.genreSeed) {
+            const fallback = await this.kazagumo.search(`${state.genreSeed} radio mix`);
+            candidate = fallback.tracks.find((track) => {
+                const fingerprint = this.buildTrackFingerprint(track);
+                const sameId = Boolean(track.identifier) && state.recentIdentifiers.includes(track.identifier);
+                const sameFingerprint = Boolean(fingerprint) && state.recentFingerprints.includes(fingerprint);
+                return !sameId && !sameFingerprint;
+            }) || null;
+        }
+
+        return candidate;
     }
 
     async handlePlayerEmpty(player) {
@@ -284,6 +365,7 @@ class MusicManager {
 
         logMusicEvent(guildId, 'info', 'La cola de reproduccion se ha vaciado.');
         player.destroy();
+        await this.clearPlaybackSnapshot(guildId);
         applyBotPresence(this.client, { active: false, guildId });
     }
 
@@ -312,38 +394,191 @@ class MusicManager {
         };
     }
 
+    isNoNodeError(error) {
+        const message = String(error?.message || '').toLowerCase();
+        return message.includes('no nodes are online') || message.includes('no node');
+    }
+
+    hasConnectedNodes() {
+        if (!this.kazagumo?.shoukaku?.nodes) return false;
+        const nodes = Array.from(this.kazagumo.shoukaku.nodes.values());
+        return nodes.some((node) => node.state === 1 || String(node.state).toLowerCase() === 'connected');
+    }
+
+    async waitForNodeConnection(timeoutMs = 7000) {
+        const started = Date.now();
+        while (Date.now() - started < timeoutMs) {
+            if (this.hasConnectedNodes()) return true;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        return this.hasConnectedNodes();
+    }
+
+    getTrackQuery(track) {
+        if (!track) return null;
+        return track.uri || track.identifier || track.title || null;
+    }
+
+    async persistCurrentPlayback(guildId, player, track = null, overrides = {}) {
+        if (!guildId || !player) return;
+        if (this.restoreInProgress.has(guildId)) return;
+
+        const currentTrack = track || player.queue?.current || null;
+        const query = this.getTrackQuery(currentTrack);
+        const trackTitle = currentTrack?.title || null;
+        const position = Number.isFinite(player.position) ? Math.max(0, Math.floor(player.position)) : 0;
+
+        await db.updateMusicSettings(guildId, {
+            last_channel_id: player.voiceId || null,
+            last_query: query,
+            last_track_title: trackTitle,
+            last_position_ms: overrides.last_position_ms ?? position,
+            last_paused: overrides.last_paused ?? (player.paused ? 1 : 0),
+            last_was_playing: overrides.last_was_playing ?? ((player.playing || player.paused) ? 1 : 0),
+            last_is_live_stream: overrides.last_is_live_stream ?? (this.getLiveStream(guildId) ? 1 : 0),
+            stream_url: overrides.stream_url ?? this.getLiveStream(guildId)
+        });
+    }
+
+    async clearPlaybackSnapshot(guildId) {
+        await db.updateMusicSettings(guildId, {
+            last_query: null,
+            last_track_title: null,
+            last_position_ms: 0,
+            last_paused: 0,
+            last_was_playing: 0,
+            last_is_live_stream: 0,
+            last_channel_id: null
+        });
+    }
+
+    async recoverSessionsAfterRestart() {
+        if (!this.hasLavalinkConfig || !this.kazagumo) return;
+
+        for (const guild of this.client.guilds.cache.values()) {
+            try {
+                const settings = await db.getMusicSettings(guild.id);
+                if (!settings) continue;
+
+                const radioState = this.getRadioState(guild.id);
+                radioState.enabled = settings.radio_enabled !== 0;
+                radioState.genreSeed = settings.radio_genre || null;
+
+                const djState = this.getDjAutoState(guild.id);
+                djState.enabled = settings.dj_auto_enabled === 1;
+                djState.fallback = settings.dj_fallback || 'radio';
+
+                if (settings.stream_url) {
+                    this.setLiveStream(guild.id, settings.stream_url);
+                }
+
+                if (!settings.last_was_playing || !settings.last_channel_id || !settings.last_query) {
+                    continue;
+                }
+
+                const channel = guild.channels.cache.get(settings.last_channel_id);
+                if (!channel || !channel.isVoiceBased?.()) {
+                    continue;
+                }
+
+                this.restoreInProgress.add(guild.id);
+                const result = await this.play(guild.id, settings.last_channel_id, settings.last_query);
+                const player = this.kazagumo.players.get(guild.id);
+                if (player) {
+                    if (settings.last_is_live_stream && settings.stream_url) {
+                        this.setLiveStream(guild.id, settings.stream_url);
+                    }
+                    const seekPosition = Number(settings.last_position_ms || 0);
+                    if (seekPosition > 0 && typeof player.seek === 'function') {
+                        await player.seek(seekPosition);
+                    }
+
+                    if (settings.last_paused) {
+                        player.pause(true);
+                    }
+
+                    await this.persistCurrentPlayback(guild.id, player, player.queue?.current, {
+                        last_position_ms: seekPosition,
+                        last_paused: settings.last_paused ? 1 : 0,
+                        last_was_playing: 1,
+                        last_is_live_stream: settings.last_is_live_stream ? 1 : 0,
+                        stream_url: settings.stream_url || null
+                    });
+                }
+
+                logMusicEvent(guild.id, 'info', `Sesion restaurada tras reinicio: ${result.title}`);
+            } catch (error) {
+                console.error(`[MusicManager] No se pudo restaurar sesion en guild ${guild.id}:`, error.message);
+            } finally {
+                this.restoreInProgress.delete(guild.id);
+            }
+        }
+    }
+
     async play(guildId, voiceChannelId, query) {
+        return this.playInternal(guildId, voiceChannelId, query, true);
+    }
+
+    async playInternal(guildId, voiceChannelId, query, allowRetry) {
         if (!this.hasLavalinkConfig) {
             throw new Error('Falta configurar LAVALINK_URL y LAVALINK_PASSWORD en el archivo .env');
         }
 
         let player = this.kazagumo.players.get(guildId);
+        try {
+            if (!player) {
+                const nodesArr = Array.from(this.kazagumo.shoukaku.nodes.values());
+                console.log(`[MusicManager] Debug Nodos: Total=${nodesArr.length}`);
+                nodesArr.forEach((node) => console.log(` - Nodo: ${node.name} | Estado: ${node.state} (1=Conectado)`));
 
-        if (!player) {
-            const nodesArr = Array.from(this.kazagumo.shoukaku.nodes.values());
-            const connectedNodes = nodesArr.filter((node) => node.state === 1);
+                if (!this.hasConnectedNodes()) {
+                    const becameReady = await this.waitForNodeConnection();
+                    if (!becameReady) {
+                        throw new Error('No nodes are online');
+                    }
+                }
 
-            console.log(`[MusicManager] Debug Nodos: Total=${nodesArr.length}`);
-            nodesArr.forEach((node) => console.log(` - Nodo: ${node.name} | Estado: ${node.state} (1=Conectado)`));
-
-            if (connectedNodes.length === 0) {
-                console.error('[MusicManager] No hay nodos Lavalink conectados en este momento.');
-                throw new Error('No hay nodos Lavalink conectados. Revisa que tu servidor Lavalink este encendido.');
+                player = await this.kazagumo.createPlayer({
+                    guildId,
+                    voiceId: voiceChannelId,
+                    textId: null,
+                    deaf: true
+                });
+                if (typeof player.setLoop === 'function') {
+                    player.setLoop('none');
+                }
             }
-
-            player = await this.kazagumo.createPlayer({
-                guildId,
-                voiceId: voiceChannelId,
-                textId: null,
-                deaf: true
-            });
+        } catch (error) {
+            if (allowRetry && this.isNoNodeError(error)) {
+                await this.waitForNodeConnection(8000);
+                return this.playInternal(guildId, voiceChannelId, query, false);
+            }
+            throw error;
         }
 
-        const resolvedQueries = await this.resolvePlayableQueries(query);
+        let resolvedQueries;
+        try {
+            resolvedQueries = await this.resolvePlayableQueries(query);
+        } catch (error) {
+            if (allowRetry && this.isNoNodeError(error)) {
+                await this.waitForNodeConnection(8000);
+                return this.playInternal(guildId, voiceChannelId, query, false);
+            }
+            throw error;
+        }
         let firstTrackTitle = null;
 
         for (const playableQuery of resolvedQueries) {
-            const result = await this.kazagumo.search(playableQuery);
+            let result;
+            try {
+                result = await this.kazagumo.search(playableQuery);
+            } catch (error) {
+                if (allowRetry && this.isNoNodeError(error)) {
+                    await this.waitForNodeConnection(8000);
+                    return this.playInternal(guildId, voiceChannelId, query, false);
+                }
+                throw error;
+            }
             if (!result.tracks.length) continue;
 
             if (!firstTrackTitle) {
@@ -367,6 +602,9 @@ class MusicManager {
         await db.updateMusicSettings(guildId, { last_channel_id: voiceChannelId });
 
         if (!player.playing && !player.paused) {
+            if (typeof player.setLoop === 'function') {
+                player.setLoop('none');
+            }
             await player.play();
         }
 
@@ -379,8 +617,9 @@ class MusicManager {
 
     async playLiveStream(guildId, voiceChannelId, streamUrl) {
         const result = await this.play(guildId, voiceChannelId, streamUrl);
-        this.setRadioMode(guildId, false);
+        await this.setRadioMode(guildId, false);
         this.setLiveStream(guildId, streamUrl);
+        await db.updateMusicSettings(guildId, { last_is_live_stream: 1, stream_url: streamUrl });
         return {
             ...result,
             isLiveStream: true
@@ -388,6 +627,10 @@ class MusicManager {
     }
 
     async enqueue(guildId, voiceChannelId, query) {
+        return this.enqueueInternal(guildId, voiceChannelId, query, true);
+    }
+
+    async enqueueInternal(guildId, voiceChannelId, query, allowRetry) {
         if (!this.hasLavalinkConfig) {
             throw new Error('Falta configurar LAVALINK_URL y LAVALINK_PASSWORD en el archivo .env');
         }
@@ -397,11 +640,29 @@ class MusicManager {
             return this.play(guildId, voiceChannelId, query);
         }
 
-        const resolvedQueries = await this.resolvePlayableQueries(query);
+        let resolvedQueries;
+        try {
+            resolvedQueries = await this.resolvePlayableQueries(query);
+        } catch (error) {
+            if (allowRetry && this.isNoNodeError(error)) {
+                await this.waitForNodeConnection(8000);
+                return this.enqueueInternal(guildId, voiceChannelId, query, false);
+            }
+            throw error;
+        }
         const addedTitles = [];
 
         for (const playableQuery of resolvedQueries) {
-            const result = await this.kazagumo.search(playableQuery);
+            let result;
+            try {
+                result = await this.kazagumo.search(playableQuery);
+            } catch (error) {
+                if (allowRetry && this.isNoNodeError(error)) {
+                    await this.waitForNodeConnection(8000);
+                    return this.enqueueInternal(guildId, voiceChannelId, query, false);
+                }
+                throw error;
+            }
             if (!result.tracks.length) continue;
             const selected = result.tracks[0];
             player.queue.add(selected);
@@ -469,6 +730,11 @@ class MusicManager {
             this.clearLiveStream(guildId);
         }
         if (!preservePresence) {
+            await this.clearPlaybackSnapshot(guildId);
+        } else {
+            await db.updateMusicSettings(guildId, { last_was_playing: 0, last_paused: 0, last_position_ms: 0 });
+        }
+        if (!preservePresence) {
             applyBotPresence(this.client, { active: false, guildId });
         }
     }
@@ -492,6 +758,7 @@ class MusicManager {
         const nextCandidate = hadQueue ? player.queue[0] : null;
 
         player.skip();
+        this.persistCurrentPlayback(guildId, player).catch(() => {});
 
         return {
             hadQueue,
@@ -508,6 +775,7 @@ class MusicManager {
         }
 
         await player.play(previousTrack, { replaceCurrent: true });
+        this.persistCurrentPlayback(guildId, player, previousTrack).catch(() => {});
 
         return {
             track: previousTrack.title
@@ -522,6 +790,7 @@ class MusicManager {
         }
 
         player.pause(true);
+        await this.persistCurrentPlayback(guildId, player, player.queue.current, { last_paused: 1 });
         return {
             currentTrack: player.queue.current ? player.queue.current.title : 'Nada'
         };
@@ -535,6 +804,7 @@ class MusicManager {
         }
 
         player.pause(false);
+        await this.persistCurrentPlayback(guildId, player, player.queue.current, { last_paused: 0 });
         return {
             currentTrack: player.queue.current ? player.queue.current.title : 'Nada'
         };
