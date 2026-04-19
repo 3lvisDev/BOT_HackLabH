@@ -32,6 +32,16 @@ function createBaseMessage(content, { canManage = true, guildOverrides = {} } = 
   return {
     content,
     guild,
+    client: {
+      application: {
+        emojis: {
+          fetch: async () => new Map([
+            ['app1', { id: 'app1', name: 'party', animated: false }],
+            ['app2', { id: 'app2', name: 'dance', animated: true }]
+          ])
+        }
+      }
+    },
     member: {
       permissions: { has: () => canManage }
     },
@@ -71,6 +81,18 @@ async function run() {
   assert.strictEqual(await handleEmojiCommand(listMsg), true);
   assert.ok(listMsg._replies[0].includes('Emojis del servidor'));
 
+  const appListMsg = createBaseMessage('!emoji app_list');
+  assert.strictEqual(await handleEmojiCommand(appListMsg), true);
+  assert.ok(appListMsg._replies[0].includes('Emojis de la aplicación'));
+
+  const useMsg = createBaseMessage('!emoji use party 🔥');
+  assert.strictEqual(await handleEmojiCommand(useMsg), true);
+  assert.ok(useMsg._replies[0].includes('<:party:app1>'));
+
+  const useMissingMsg = createBaseMessage('!emoji use missing 🔥');
+  assert.strictEqual(await handleEmojiCommand(useMissingMsg), true);
+  assert.ok(useMissingMsg._replies[0].includes('🔥'));
+
   console.log('emoji command tests ok');
 }
 
@@ -78,4 +100,3 @@ run().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-

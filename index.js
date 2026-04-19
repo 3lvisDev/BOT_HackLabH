@@ -332,6 +332,7 @@ async function handleTicketSlashCommand(interaction) {
 
 async function handleEmojiSlashCommand(interaction) {
     const { createEmojiFromUrl, EMOJI_NAME_REGEX } = require('./commands/emoji');
+    const { fetchApplicationEmojis, emojiOrFallback } = require('./utils/appEmojis');
     const guild = interaction.guild;
 
     const hasPermission = interaction.memberPermissions?.has(
@@ -384,6 +385,25 @@ async function handleEmojiSlashCommand(interaction) {
         }
         const lines = emojis.slice(0, 50).map((emoji) => `${emoji.animated ? 'a' : 's'} • :${emoji.name}: • \`${emoji.id}\``);
         await interaction.reply(`Emojis del servidor (${emojis.length}):\n${lines.join('\n')}`);
+        return true;
+    }
+
+    if (interaction.commandName === 'emoji_app_list') {
+        const appEmojis = await fetchApplicationEmojis(interaction.client);
+        if (!appEmojis.length) {
+            await interaction.reply('Tu aplicación no tiene emojis subidos todavía.');
+            return true;
+        }
+        const lines = appEmojis.slice(0, 80).map((emoji) => `${emoji.animated ? 'a' : 's'} • :${emoji.name}: • \`${emoji.id}\``);
+        await interaction.reply(`Emojis de la aplicación (${appEmojis.length}):\n${lines.join('\n')}`);
+        return true;
+    }
+
+    if (interaction.commandName === 'emoji_use') {
+        const name = interaction.options.getString('name', true).trim();
+        const fallback = interaction.options.getString('fallback')?.trim() || '✨';
+        const value = await emojiOrFallback(interaction.client, name, fallback);
+        await interaction.reply(`Resultado: ${value}`);
         return true;
     }
 

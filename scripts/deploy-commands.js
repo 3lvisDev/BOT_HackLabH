@@ -86,6 +86,14 @@ const commands = [
   new SlashCommandBuilder()
     .setName('emoji_list')
     .setDescription('Lista los emojis personalizados del servidor'),
+  new SlashCommandBuilder()
+    .setName('emoji_app_list')
+    .setDescription('Lista los emojis subidos en la aplicación'),
+  new SlashCommandBuilder()
+    .setName('emoji_use')
+    .setDescription('Devuelve emoji de aplicación por nombre o fallback')
+    .addStringOption((option) => option.setName('name').setDescription('Nombre del emoji app').setRequired(true))
+    .addStringOption((option) => option.setName('fallback').setDescription('Texto/emote fallback').setRequired(false)),
 ].map((command) => command.toJSON());
 
 async function main() {

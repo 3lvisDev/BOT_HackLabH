@@ -1,7 +1,9 @@
 const { PermissionsBitField } = require('discord.js');
+const { fetchApplicationEmojis, emojiOrFallback } = require('../utils/appEmojis');
 
 const EMOJI_NAME_REGEX = /^[a-zA-Z0-9_]{2,32}$/;
 const ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif'];
+const MAX_EMOJI_SIZE_BYTES = 256 * 1024;
 
 function hasEmojiManagePermission(member) {
   if (!member?.permissions?.has) return false;
@@ -22,6 +24,17 @@ function isLikelyEmojiAssetUrl(input) {
   }
 }
 
+function isValidAttachmentForEmoji(attachment) {
+  if (!attachment) return false;
+  const contentType = String(attachment.contentType || '').toLowerCase();
+  const url = String(attachment.url || '');
+  const hasImageType = contentType.startsWith('image/');
+  const hasValidExt = isLikelyEmojiAssetUrl(url);
+  const size = Number(attachment.size || 0);
+  const hasValidSize = size > 0 ? size <= MAX_EMOJI_SIZE_BYTES : true;
+  return (hasImageType || hasValidExt) && hasValidSize;
+}
+
 async function createEmojiFromUrl(guild, name, assetUrl, authorId) {
   if (!EMOJI_NAME_REGEX.test(name)) {
     throw new Error('Nombre inválido. Usa 2-32 caracteres alfanuméricos o guion bajo.');
@@ -31,6 +44,20 @@ async function createEmojiFromUrl(guild, name, assetUrl, authorId) {
   }
   return guild.emojis.create({
     attachment: assetUrl,
+    name,
+    reason: `Emoji subido por ${authorId || 'usuario'}`
+  });
+}
+
+async function createEmojiFromAttachment(guild, name, attachment, authorId) {
+  if (!EMOJI_NAME_REGEX.test(name)) {
+    throw new Error('Nombre inválido. Usa 2-32 caracteres alfanuméricos o guion bajo.');
+  }
+  if (!isValidAttachmentForEmoji(attachment)) {
+    throw new Error('Adjunto inválido. Debe ser imagen permitida y de máximo 256KB.');
+  }
+  return guild.emojis.create({
+    attachment: attachment.url,
     name,
     reason: `Emoji subido por ${authorId || 'usuario'}`
   });
@@ -72,6 +99,22 @@ async function handleEmojiCommand(message) {
     return true;
   }
 
+  if (action === 'addfile') {
+    const name = (rest[0] || '').trim();
+    const attachment = message.attachments?.first ? message.attachments.first() : null;
+    if (!name || !attachment) {
+      await message.reply('Uso: `!emoji addfile <nombre>` adjuntando una imagen.');
+      return true;
+    }
+    try {
+      const emoji = await createEmojiFromAttachment(message.guild, name, attachment, message.author.id);
+      await message.reply(`Emoji agregado: <:${emoji.name}:${emoji.id}>`);
+    } catch (err) {
+      await message.reply(`No se pudo agregar emoji: ${err.message}`);
+    }
+    return true;
+  }
+
   if (action === 'delete' || action === 'remove') {
     const name = (rest[0] || '').trim();
     if (!name) {
@@ -103,11 +146,45 @@ async function handleEmojiCommand(message) {
     return true;
   }
 
+  if (action === 'app_list') {
+    try {
+      const appEmojis = await fetchApplicationEmojis(message.client);
+      if (!appEmojis.length) {
+        await message.reply('Tu aplicación no tiene emojis subidos todavía.');
+        return true;
+      }
+      const lines = appEmojis.slice(0, 80).map((emoji) => `${emoji.animated ? 'a' : 's'} • :${emoji.name}: • \`${emoji.id}\``);
+      await message.reply(`Emojis de la aplicación (${appEmojis.length}):\n${lines.join('\n')}`);
+    } catch (err) {
+      await message.reply(`No se pudo listar emojis de la app: ${err.message}`);
+    }
+    return true;
+  }
+
+  if (action === 'use') {
+    const name = (rest[0] || '').trim();
+    const fallback = (rest[1] || '✨').trim();
+    if (!name) {
+      await message.reply('Uso: `!emoji use <nombre> [fallback]`');
+      return true;
+    }
+    try {
+      const value = await emojiOrFallback(message.client, name, fallback);
+      await message.reply(`Resultado: ${value}`);
+    } catch (err) {
+      await message.reply(`No se pudo resolver emoji: ${err.message}`);
+    }
+    return true;
+  }
+
   await message.reply(
     'Comandos emoji:\n' +
     '`!emoji add <nombre> <url-imagen>`\n' +
+    '`!emoji addfile <nombre>` (adjunta imagen)\n' +
     '`!emoji delete <nombre>`\n' +
-    '`!emoji list`'
+    '`!emoji list`\n' +
+    '`!emoji app_list`\n' +
+    '`!emoji use <nombre> [fallback]`'
   );
   return true;
 }
@@ -117,6 +194,8 @@ module.exports = {
   hasEmojiManagePermission,
   isLikelyEmojiAssetUrl,
   createEmojiFromUrl,
-  EMOJI_NAME_REGEX
+  createEmojiFromAttachment,
+  EMOJI_NAME_REGEX,
+  isValidAttachmentForEmoji,
+  MAX_EMOJI_SIZE_BYTES
 };
-

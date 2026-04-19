@@ -20,7 +20,7 @@ module.exports = {
                 },
                 {
                     name: '😀 Emojis',
-                    value: '`!emoji add <nombre> <url>`\n`!emoji delete <nombre>`\n`!emoji list`\nRequiere permiso Gestionar emojis y stickers.',
+                    value: '`!emoji add <nombre> <url>`\n`!emoji addfile <nombre>` (con adjunto)\n`!emoji delete <nombre>`\n`!emoji list` / `!emoji app_list` / `!emoji use <nombre> [fallback]`',
                 },
                 {
                     name: '⚙️ Configuración',
