@@ -1,0 +1,39 @@
+HackLabH Public License v1.0
+
+Copyright (c) 2026 HackLabH
+All rights reserved.
+
+1) Grant
+Permission is granted to view, study, and evaluate this repository strictly for transparency,
+security review, and educational purposes.
+
+2) Restrictions
+You may NOT, without explicit prior written permission from HackLabH:
+
+  a) self-host, deploy, run, or operate this software in production;
+  b) sell, sublicense, rent, distribute, or commercially exploit this software;
+  c) create or operate clone services derived from this software;
+  d) remove branding, authorship notices, or legal notices;
+  e) represent this software or derivative work as your own product.
+
+3) Commercial licensing
+Any commercial use, white-labeling, SaaS operation, redistribution, or hosting requires
+a separate written commercial agreement with HackLabH.
+
+4) Trademarks and branding
+“HackLabH”, “HackLabH Bot”, associated logos, names, and product identity are proprietary.
+No trademark rights are granted under this license.
+
+5) No warranty
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+AND NON-INFRINGEMENT.
+
+6) Liability
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES,
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+7) Termination
+Any breach of these terms automatically terminates all granted rights immediately.
+

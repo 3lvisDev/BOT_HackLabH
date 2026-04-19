@@ -144,3 +144,14 @@ Latest release package includes:
 HackLabH Bot is designed as a **community operating system for Discord**:
 **engagement, entertainment, support, and control** in one unified experience.
 
+---
+
+## License & Usage
+
+This repository is **source-available for transparency**.
+
+- See [LICENSE](./LICENSE)
+- See [NOTICE.md](./NOTICE.md)
+
+Self-hosting, resale, clone deployment, and commercial usage are **not allowed** without explicit written permission from HackLabH.
+
