@@ -161,12 +161,31 @@ document.addEventListener('DOMContentLoaded', () => {
         // Pre-revealing clean up
         loginView.classList.add('hidden');
         dashView.classList.remove('hidden');
+        applyPermissionVisibility(user);
         
         updateStats();
         await loadInitialData();
         
         // Finalize initialization by syncing URL
         syncStateWithURL();
+    }
+
+    function applyPermissionVisibility(user) {
+        const canManageSecrets = Boolean(user?.canManageSecrets);
+        const envNavItem = document.querySelector('.nav-item[data-screen="env-screen"]');
+        const envScreen = document.getElementById('env-screen');
+
+        if (envNavItem) {
+            envNavItem.classList.toggle('hidden', !canManageSecrets);
+        }
+
+        if (envScreen) {
+            envScreen.classList.toggle('hidden', !canManageSecrets);
+        }
+
+        if (!canManageSecrets && window.location.hash === '#env-screen') {
+            window.location.hash = 'home-screen';
+        }
     }
 
     async function loadGuilds() {

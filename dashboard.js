@@ -9,6 +9,7 @@ const db = require('./db');
 const fs = require('fs');
 const sodium = require('libsodium-wrappers');
 const { buildAccessibleGuilds, resolveSelectedGuildId, buildGuildChannels } = require('./dashboard-guilds');
+const { canManageSecrets } = require('./utils/webPermissions');
 
 function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, musicManager) {
   const app = express();
@@ -108,6 +109,16 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
     }
   };
 
+  const secretsOwnerMiddleware = (req, res, next) => {
+    if (req.session?.user && typeof req.session.user.canManageSecrets === 'undefined') {
+      req.session.user.canManageSecrets = canManageSecrets(req.session.user.id);
+    }
+    if (req.session?.user?.canManageSecrets) {
+      return next();
+    }
+    return res.status(403).json({ error: 'Acceso denegado. Solo el propietario autorizado puede gestionar secretos.' });
+  };
+
   const getSessionGuilds = (req) => req.session?.user?.guilds || [];
 
   const getActiveGuild = (req) => {
@@ -170,6 +181,8 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
         Array.from(discordClient.guilds.cache.values()),
         guildsResponse.data
       );
+      const accessibleGuildIds = new Set(accessibleGuilds.map((guild) => guild.id));
+      const isGuildOwner = (guildsResponse.data || []).some((guild) => guild?.owner && accessibleGuildIds.has(guild.id));
 
       if (accessibleGuilds.length === 0) {
         return res.send("Acceso denegado. Necesitas compartir un servidor con el bot y tener permisos de administrador.");
@@ -182,7 +195,8 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
           ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
           : 'https://cdn.discordapp.com/embed/avatars/0.png',
         guildId: accessibleGuilds[0].id,
-        guilds: accessibleGuilds
+        guilds: accessibleGuilds,
+        canManageSecrets: canManageSecrets(discordUser.id, process.env, { isGuildOwner })
       };
       res.redirect('/');
     } catch (error) {
@@ -581,10 +595,11 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
     'DISCORD_CLIENT_SECRET', 'DISCORD_REDIRECT_URI', 'NODE_ENV', 
     'ENCRYPTION_KEY', 'PI_HOST', 'PI_USER', 'PI_PASSWORD',
     'LAVALINK_URL', 'LAVALINK_PASSWORD', 'LAVALINK_SECURE', 'GITHUB_TOKEN',
-    'SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_MARKET'
+    'SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_MARKET',
+    'WEB_OWNER_DISCORD_IDS'
   ];
 
-  app.get('/api/system/env', authMiddleware, (req, res) => {
+  app.get('/api/system/env', authMiddleware, secretsOwnerMiddleware, (req, res) => {
       const data = {};
       envKeys.forEach(key => {
           const val = process.env[key] || "";
@@ -598,7 +613,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
       res.json(data);
   });
 
-  app.post('/api/system/env', authMiddleware, strictLimiter, async (req, res) => {
+  app.post('/api/system/env', authMiddleware, secretsOwnerMiddleware, strictLimiter, async (req, res) => {
       try {
           const newEnv = req.body;
           const envPath = path.join(__dirname, '.env');
@@ -627,7 +642,7 @@ function startDashboard(discordClient, setupCommunityLogic, applySmartRoles, mus
   });
 
   // Real GitHub Secrets Sync using API
-  app.post('/api/system/github/sync', authMiddleware, strictLimiter, async (req, res) => {
+  app.post('/api/system/github/sync', authMiddleware, secretsOwnerMiddleware, strictLimiter, async (req, res) => {
       const githubToken = process.env.GITHUB_TOKEN;
       const repoPath = "3lvisDev/BOT_HackLabH"; // Podríamos hacerlo dinámico después
 
