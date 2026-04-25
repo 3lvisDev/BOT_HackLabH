@@ -1,0 +1,7 @@
+name: My Config
+version: 0.0.1
+models:
+  - title: "Qwen 2.5 Coder (PC Potente)"
+    model: "qwen2.5-coder:7b"
+    apiBase: "http://100.75.204.7:11434"
+    provider: "ollama"

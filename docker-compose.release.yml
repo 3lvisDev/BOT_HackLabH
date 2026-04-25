@@ -1,0 +1,123 @@
+version: "3.8"
+
+# ═══════════════════════════════════════════════════════════════
+# HackLabH Release — Docker Compose (Notebook Local)
+# ═══════════════════════════════════════════════════════════════
+# Entorno de desarrollo COMPLETAMENTE separado de producción.
+#
+# Puertos Release (no colisionan con prod):
+#   9666  → Bot Dashboard / Panel Web
+#   2444  → Lavalink Release (audio server)
+#
+# Uso:
+#   docker compose -f docker-compose.release.yml up -d --build
+#   docker compose -f docker-compose.release.yml down
+#   docker compose -f docker-compose.release.yml logs -f
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ──────────────────────────────────────────────
+  # Lavalink Release — Audio Server for Discord
+  # ──────────────────────────────────────────────
+  lavalink:
+    container_name: hacklabh-release-lavalink
+    image: ghcr.io/lavalink-devs/lavalink:4
+    restart: unless-stopped
+    ports:
+      - "2444:2333"
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+    environment:
+      - _JAVA_OPTIONS=-Xmx384m
+    networks:
+      - release-net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --header='Authorization: youshallnotpass' -O /dev/null http://localhost:2333/version || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ──────────────────────────────────────────────
+  # HackLabH Bot Service — Discord Runtime
+  # ──────────────────────────────────────────────
+  bot:
+    container_name: hacklabh-release-bot
+    build:
+      context: .
+      dockerfile: Dockerfile.release
+    restart: unless-stopped
+    ports:
+      - "9667:9667"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - LAVALINK_URL=lavalink:2333
+      - LAVALINK_PASSWORD=youshallnotpass
+      - LAVALINK_SECURE=false
+      - INTERNAL_API_PORT=9667
+    volumes:
+      - bot-data:/usr/src/app/data
+    depends_on:
+      lavalink:
+        condition: service_healthy
+    networks:
+      - release-net
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:9667/internal/status', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+  # ──────────────────────────────────────────────
+  # HackLabH Panel Service — Dashboard Web
+  # ──────────────────────────────────────────────
+  panel:
+    container_name: hacklabh-release-panel
+    build:
+      context: .
+      dockerfile: Dockerfile.release
+    entrypoint: ["node", "panel.js"]
+    restart: unless-stopped
+    ports:
+      - "9666:9666"
+    env_file:
+      - .env.release
+    environment:
+      - PORT=9666
+      - NODE_ENV=development
+      - BOT_API_URL=http://bot:9667
+    volumes:
+      - bot-data:/usr/src/app/data
+    depends_on:
+      - bot
+    networks:
+      - release-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:9666/', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  bot-data:
+    driver: local
+
+networks:
+  release-net:
+    driver: bridge
