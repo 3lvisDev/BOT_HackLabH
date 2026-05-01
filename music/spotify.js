@@ -14,12 +14,12 @@ function parseSpotifyUrl(input) {
   const raw = String(input || '').trim();
   const urlMatch = raw.match(SPOTIFY_URL_REGEX);
   if (urlMatch) {
-    return { type: urlMatch[1].toLowerCase(), id: urlMatch[2], raw };
+    return { type: urlMatch[1].toLowerCase(), id: urlMatch[2] };
   }
 
   const uriMatch = raw.match(SPOTIFY_URI_REGEX);
   if (uriMatch) {
-    return { type: uriMatch[1].toLowerCase(), id: uriMatch[2], raw };
+    return { type: uriMatch[1].toLowerCase(), id: uriMatch[2] };
   }
 
   return null;
@@ -34,14 +34,32 @@ function buildTrackSearchQuery(track) {
   return `${artistText} ${track.name || ''}`.trim();
 }
 
-async function resolveSpotifyQueries(input) {
+async function resolveSpotifyQueries(input, client = spotifyUrlInfo) {
+  const raw = String(input || '').trim();
   const parsed = parseSpotifyUrl(input);
   if (!parsed) {
-    throw new Error('URL de Spotify inválida. Usa track, playlist o album.');
+    throw new Error('URL de Spotify inv?lida. Usa track, playlist o album.');
   }
 
   try {
-    const tracks = await spotifyUrlInfo.getTracks(parsed.raw);
+    if (client && client !== spotifyUrlInfo) {
+      if (parsed.type === 'track' && typeof client.getTrack === 'function') {
+        const track = await client.getTrack(parsed.id);
+        const query = buildTrackSearchQuery(track);
+        return query ? [query] : [];
+      }
+
+      const collectionResolver = parsed.type === 'album'
+        ? client.getAlbumTracks
+        : client.getPlaylistTracks;
+
+      if (typeof collectionResolver === 'function') {
+        const tracks = await collectionResolver.call(client, parsed.id);
+        return (tracks || []).map(buildTrackSearchQuery).filter(Boolean);
+      }
+    }
+
+    const tracks = await spotifyUrlInfo.getTracks(raw);
     if (!tracks || !tracks.length) {
       throw new Error('No se encontraron canciones en este enlace de Spotify.');
     }
@@ -49,7 +67,7 @@ async function resolveSpotifyQueries(input) {
     return tracks.map(buildTrackSearchQuery).filter(Boolean);
   } catch (err) {
     console.error('[Spotify Scraper Error]', err.message);
-    throw new Error('No se pudo extraer la información de Spotify. Asegúrate de que el enlace sea público.');
+    throw new Error('No se pudo extraer la informaci?n de Spotify. Aseg?rate de que el enlace sea p?blico.');
   }
 }
 

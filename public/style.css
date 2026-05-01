@@ -1525,3 +1525,213 @@ select.glass-input {
     scroll-behavior: auto !important;
   }
 }
+
+/* --- Sidebar Invite Button --- */
+.sidebar-divider {
+    height: 1px;
+    background: var(--border-main);
+    margin: 20px 12px;
+    opacity: 0.5;
+}
+
+.invite-btn-sidebar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin: 10px 12px;
+    padding: 14px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: white;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 0.95rem;
+    box-shadow: 0 8px 20px -5px var(--primary-glow);
+    transition: transform 0.3s, box-shadow 0.3s, filter 0.3s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.invite-btn-sidebar:hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 12px 30px -5px var(--primary-glow);
+    filter: brightness(1.1);
+}
+
+.invite-btn-sidebar svg {
+    filter: drop-shadow(0 0 5px rgba(255,255,255,0.5));
+}
+/* --- Auth View Management --- */
+.login-view, .dashboard-view {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    transition: opacity 0.5s ease;
+}
+
+.login-view.hidden, .dashboard-view.hidden {
+    display: none;
+    opacity: 0;
+}
+
+.login-view {
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 100;
+}
+
+.login-card {
+    max-width: 450px;
+    width: 100%;
+    padding: 40px;
+    text-align: center;
+    animation: premiumFade 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.login-logo {
+    width: 70px;
+    height: 70px;
+    background: var(--primary);
+    color: white;
+    font-size: 2rem;
+    font-weight: 900;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    box-shadow: 0 10px 25px var(--primary-glow);
+}
+
+.login-header h1 {
+    font-size: 2.2rem;
+    font-weight: 900;
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+}
+
+.login-header h1 span {
+    color: var(--primary);
+}
+
+.login-desc {
+    color: var(--text-secondary);
+    margin-bottom: 30px;
+    line-height: 1.6;
+}
+
+.btn-discord {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    padding: 16px;
+    background: #5865F2;
+    color: white;
+    border-radius: 14px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: transform 0.3s, box-shadow 0.3s;
+    border: none;
+}
+
+.btn-discord:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(88, 101, 242, 0.4);
+}
+
+.login-footer {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-main);
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.login-footer a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+/* Dashboard Wrapper */
+.dashboard-view {
+    flex-direction: row;
+}
+
+@media (max-width: 768px) {
+    .dashboard-view {
+        flex-direction: column;
+    }
+}
+
+
+/* --- UI guideline hardening --- */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    scroll-margin-top: 96px;
+    text-wrap: balance;
+}
+
+.logo-text,
+.user-name,
+.user-tag,
+.playlist-name,
+.badge-name,
+.badge-desc,
+.status-box strong,
+.console-surface {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.stat-card p,
+.playlist-count,
+.status-box strong,
+.log-time {
+    font-variant-numeric: tabular-nums;
+}
+
+.sidebar,
+.reconnect-overlay {
+    overscroll-behavior: contain;
+}
+
+.playlist-item {
+    width: 100%;
+    border: 0;
+    text-align: left;
+}
+
+.btn-mini-danger:focus-visible,
+.playlist-item:focus-visible,
+.invite-btn-sidebar:focus-visible,
+.btn-discord:focus-visible,
+.sidebar-logout:focus-visible,
+.menu-btn:focus-visible,
+.nav-item:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 4px;
+    box-shadow: 0 0 0 4px var(--primary-glow);
+}
+
+@supports (padding: max(0px)) {
+    .login-view,
+    .dashboard-view {
+        padding-left: max(0px, env(safe-area-inset-left));
+        padding-right: max(0px, env(safe-area-inset-right));
+    }
+}
