@@ -16,6 +16,7 @@ const { resolveGuildLocale } = require('./utils/i18n');
 const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
 
   const app = express();
+  app.set('trust proxy', 1); // Confiar en el proxy (Nginx/Cloudflare) para cookies seguras
   const PORT = process.env.PORT || 3000;
   
   const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
@@ -49,7 +50,7 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
   // Rate limiting estricto para autenticación
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 5, // Solo 5 intentos de login
+    max: 50, // Aumentado de 5 a 50 para pruebas
     message: 'Demasiados intentos de inicio de sesión, por favor intenta de nuevo más tarde.',
     standardHeaders: true,
     legacyHeaders: false,
@@ -68,16 +69,22 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
   app.use('/api/', apiLimiter);
   
   app.use(session({
-    secret: process.env.WEB_ADMIN_PASSWORD || crypto.randomBytes(20).toString('hex'),
-    resave: false,
-    saveUninitialized: false,
+    secret: process.env.WEB_ADMIN_PASSWORD || 'hacklab-secret-fallback-12345',
+    resave: true,
+    saveUninitialized: true,
     cookie: { 
-      secure: process.env.NODE_ENV === 'production', // HTTPS en producción
-      httpOnly: true, // Previene acceso desde JavaScript
-      sameSite: 'strict', // Previene CSRF
-      maxAge: 1000 * 60 * 60 * 24 // 24 horas
+      secure: false, 
+      httpOnly: false, // Permitimos acceso desde JS para debug
+      sameSite: 'lax', 
+      maxAge: 1000 * 60 * 60 * 24 
     }
   }));
+
+  // Middleware de Debug para ver si la sesiÃ³n viaja
+  app.use((req, res, next) => {
+      console.log(`[Debug] ${req.method} ${req.url} - SID: ${req.sessionID} - Authed: ${!!req.session.user}`);
+      next();
+  });
 
   app.use(express.static(path.join(__dirname, 'public')));
 
@@ -94,12 +101,9 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
   });
 
   app.get('/install/discord', (req, res) => {
-    const clientId = process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID || '';
-    if (!clientId) {
-      return res.status(500).send('DISCORD_CLIENT_ID no está configurado.');
-    }
-
-    const installUrl = `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(clientId)}&permissions=8&integration_type=0&scope=bot%20applications.commands`;
+    const clientId = process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID || '1194412207144980531';
+    
+    const installUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&permissions=8&scope=bot%20applications.commands`;
     res.redirect(installUrl);
   });
 
@@ -164,17 +168,25 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
     if (!DISCORD_CLIENT_ID) {
         return res.status(500).send("La variable DISCORD_CLIENT_ID no está configurada en .env");
     }
-    const redirectUri = process.env.DISCORD_REDIRECT_URI || `http://${req.get('host')}/api/auth/callback`;
+    // Priorizamos la IP/Host desde donde el usuario entra para evitar problemas de localhost vs IP
+    const host = req.get('host');
+    const redirectUri = `http://${host}/api/auth/callback`;
+    
+    console.log(`[Auth] Iniciando login. Redirect detectado: ${redirectUri}`);
+    
     const url = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=identify%20guilds`;
     res.redirect(url);
   });
 
   app.get('/api/auth/callback', authLimiter, async (req, res) => {
     const code = req.query.code;
+    console.log(`[Auth] Recibido callback con código: ${code ? 'SÍ' : 'NO'}`);
     if (!code) return res.send("No se proporcionó un código OAuth.");
 
     try {
       const redirectUri = process.env.DISCORD_REDIRECT_URI || `http://${req.get('host')}/api/auth/callback`;
+      console.log(`[Auth] Usando Redirect URI: ${redirectUri}`);
+      
       const params = new URLSearchParams();
       params.append('client_id', DISCORD_CLIENT_ID);
       params.append('client_secret', DISCORD_CLIENT_SECRET);
@@ -182,6 +194,7 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
       params.append('code', code);
       params.append('redirect_uri', redirectUri);
 
+      console.log(`[Auth] Solicitando token a Discord...`);
       const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', params, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -189,6 +202,8 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
       });
 
       const accessToken = tokenResponse.data.access_token;
+      console.log(`[Auth] Token obtenido. Obteniendo datos del usuario...`);
+      
       const userResponse = await axios.get('https://discord.com/api/users/@me', {
         headers: {
           Authorization: `Bearer ${accessToken}`
@@ -220,7 +235,17 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
         guilds: accessibleGuilds,
         canManageSecrets: canManageSecrets(discordUser.id, process.env, { isGuildOwner })
       };
-      res.redirect('/');
+
+      console.log(`[Auth] SesiÃ³n creada para el usuario: ${discordUser.username} (${discordUser.id})`);
+      
+      // Forzar guardado de sesiÃ³n antes de redirigir
+      req.session.save((err) => {
+          if (err) {
+              console.error('[Auth] Error al guardar sesiÃ³n:', err);
+              return res.status(500).send("Error interno al guardar la sesiÃ³n.");
+          }
+          res.redirect('/');
+      });
     } catch (error) {
       const redirectUri = process.env.DISCORD_REDIRECT_URI || `http://${req.get('host')}/api/auth/callback`;
       const discordMessage = error.response?.data?.error_description || error.response?.data?.error || error.message;
@@ -231,10 +256,10 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
       });
 
       if (discordMessage && String(discordMessage).toLowerCase().includes('redirect')) {
-        return res.status(500).send(`Error de autenticacion OAuth. Revisa DISCORD_REDIRECT_URI y registrala igual en Discord Portal: ${redirectUri}`);
+        return res.status(500).send(`Error de autenticaciÃ³n OAuth. Revisa DISCORD_REDIRECT_URI y registrala igual en Discord Portal: ${redirectUri}`);
       }
 
-      res.status(500).send(`Error autenticacion: ${discordMessage}`);
+      res.status(500).send(`Error autenticaciÃ³n: ${discordMessage}`);
     }
   });
 
@@ -532,6 +557,64 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
           });
           res.json(data);
       } catch (err) { res.status(400).json({ error: err.response?.data?.error || err.message }); }
+  });
+
+  // --- RUTAS DE USUARIO PERSONAL (Para todos) ---
+  app.get('/api/my/playlists', authMiddleware, async (req, res) => {
+      try {
+          const userId = req.session.user.id;
+          const playlists = await db.getUserPlaylists(userId);
+          res.json(playlists);
+      } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/my/playlists', authMiddleware, async (req, res) => {
+      try {
+          const userId = req.session.user.id;
+          const { name } = req.body;
+          if (!name) return res.status(400).json({ error: 'Nombre requerido' });
+          await db.createUserPlaylist(userId, name);
+          res.json({ success: true });
+      } catch (err) { res.status(400).json({ error: err.message }); }
+  });
+
+  app.get('/api/my/playlists/:name', authMiddleware, async (req, res) => {
+      try {
+          const userId = req.session.user.id;
+          const playlist = await db.getUserPlaylistByName(userId, req.params.name);
+          if (!playlist) return res.status(404).json({ error: 'No encontrada' });
+          const items = await db.getUserPlaylistItems(playlist.id);
+          res.json({ playlist, items });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/my/playlists/:name/items', authMiddleware, async (req, res) => {
+      try {
+          const userId = req.session.user.id;
+          const { query } = req.body;
+          const playlist = await db.getUserPlaylistByName(userId, req.params.name);
+          if (!playlist) return res.status(404).json({ error: 'No encontrada' });
+          const result = await db.addUserPlaylistItem(playlist.id, query);
+          res.json(result);
+      } catch (err) { res.status(400).json({ error: err.message }); }
+  });
+
+  app.delete('/api/my/playlists/:name', authMiddleware, async (req, res) => {
+      try {
+          const userId = req.session.user.id;
+          const ok = await db.deleteUserPlaylist(userId, req.params.name);
+          res.json({ success: ok });
+      } catch (err) { res.status(400).json({ error: err.message }); }
+  });
+
+  app.delete('/api/my/playlists/:name/items/:position', authMiddleware, async (req, res) => {
+      try {
+          const userId = req.session.user.id;
+          const playlist = await db.getUserPlaylistByName(userId, req.params.name);
+          if (!playlist) return res.status(404).json({ error: 'No encontrada' });
+          const ok = await db.removeUserPlaylistItem(playlist.id, Number(req.params.position));
+          res.json({ success: ok });
+      } catch (err) { res.status(400).json({ error: err.message }); }
   });
 
   app.get('/api/automod/status', authMiddleware, async (req, res) => {

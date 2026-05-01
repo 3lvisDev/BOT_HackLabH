@@ -93,6 +93,21 @@ async function initDB() {
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     closed_at DATETIME
                 );
+                CREATE TABLE IF NOT EXISTS user_playlists (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, name)
+                );
+                CREATE TABLE IF NOT EXISTS user_playlist_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    playlist_id INTEGER NOT NULL,
+                    query TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(playlist_id) REFERENCES user_playlists(id) ON DELETE CASCADE
+                );
             `);
                 await ensureMusicSettingsSchema(db);
                 return db;
@@ -319,10 +334,64 @@ async function closeTicket(guildId, ticketId) {
     return db.get(`SELECT * FROM tickets WHERE guild_id = ? AND id = ?`, [guildId, ticketId]);
 }
 
+// --- User Playlists Helpers ---
+async function createUserPlaylist(userId, name) {
+    const db = await initDB();
+    return db.run(`INSERT INTO user_playlists (user_id, name) VALUES (?, ?)`, [userId, name]);
+}
+
+async function getUserPlaylists(userId) {
+    const db = await initDB();
+    return db.all(`
+        SELECT p.*, (SELECT COUNT(*) FROM user_playlist_items WHERE playlist_id = p.id) as item_count 
+        FROM user_playlists p WHERE user_id = ?`, [userId]);
+}
+
+async function getUserPlaylistByName(userId, name) {
+    const db = await initDB();
+    return db.get(`SELECT * FROM user_playlists WHERE user_id = ? AND name = ?`, [userId, name]);
+}
+
+async function deleteUserPlaylist(userId, name) {
+    const db = await initDB();
+    const playlist = await getUserPlaylistByName(userId, name);
+    if (!playlist) return false;
+    await db.run(`DELETE FROM user_playlists WHERE id = ?`, [playlist.id]);
+    return true;
+}
+
+async function addUserPlaylistItem(playlistId, query) {
+    const db = await initDB();
+    const row = await db.get(`SELECT MAX(position) as lastPos FROM user_playlist_items WHERE playlist_id = ?`, [playlistId]);
+    const nextPos = (row?.lastPos || 0) + 1;
+    await db.run(`INSERT INTO user_playlist_items (playlist_id, query, position) VALUES (?, ?, ?)`, [playlistId, query, nextPos]);
+    return { position: nextPos };
+}
+
+async function getUserPlaylistItems(playlistId) {
+    const db = await initDB();
+    return db.all(`SELECT * FROM user_playlist_items WHERE playlist_id = ? ORDER BY position ASC`, [playlistId]);
+}
+
+async function removeUserPlaylistItem(playlistId, position) {
+    const db = await initDB();
+    const result = await db.run(`DELETE FROM user_playlist_items WHERE playlist_id = ? AND position = ?`, [playlistId, position]);
+    if (result.changes > 0) {
+        // Re-order remaining items
+        await db.run(`
+            UPDATE user_playlist_items 
+            SET position = (SELECT COUNT(*) FROM user_playlist_items i2 WHERE i2.playlist_id = ? AND i2.position <= user_playlist_items.position)
+            WHERE playlist_id = ?`, [playlistId, playlistId]);
+        return true;
+    }
+    return false;
+}
+
 module.exports = { 
     initDB, getGuildConfig, setGuildConfig, getSettings, updateSettings, 
     updateUserStats, getAllAchievements, createAchievement, getUserAchievements, earnAchievement,
     getMusicSettings, updateMusicSettings, logMusicEvent, getMusicLogs,
     createTicket, getTickets, closeTicket,
+    createUserPlaylist, getUserPlaylists, getUserPlaylistByName, deleteUserPlaylist, addUserPlaylistItem, getUserPlaylistItems, removeUserPlaylistItem,
     encrypt, decrypt
 };

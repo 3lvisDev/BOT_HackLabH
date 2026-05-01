@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Comando de ayuda para listar las funciones disponibles del bot.
  */
 const { resolveGuildLocale, t } = require('../utils/i18n');
@@ -18,6 +18,10 @@ module.exports = {
           value: t(locale, 'help_music_value')
         },
         {
+          name: t(locale, 'help_personal_title'),
+          value: t(locale, 'help_personal_value')
+        },
+        {
           name: t(locale, 'help_tickets_title'),
           value: t(locale, 'help_tickets_value')
         },
@@ -28,6 +32,10 @@ module.exports = {
         {
           name: t(locale, 'help_config_title'),
           value: t(locale, 'help_config_value')
+        },
+        {
+            name: '🔗 Invitación',
+            value: 'Usa `.invite` para obtener mi enlace de invitación.'
         },
         {
           name: t(locale, 'help_dashboard_title'),

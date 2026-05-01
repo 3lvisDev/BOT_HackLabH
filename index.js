@@ -922,6 +922,12 @@ async function setupCommunity(guild, logger = console.log, adminUserIds = [], mo
 }
 
 client.on('voiceStateUpdate', (oldState, newState) => {
+    // 1. Manejo de Inactividad (Auto-Leave)
+    musicManager.handleVoiceStateUpdate(oldState, newState).catch((err) => {
+        console.error('[MusicManager] Error en handleVoiceStateUpdate:', err.message);
+    });
+
+    // 2. Manejo de Presencia
     if (newState.id === client.user.id) {
         console.log(`[System] VoiceStateUpdate para el bot: Canal ${newState.channelId}`);
         if (!newState.channelId) {
@@ -1020,6 +1026,12 @@ client.on('messageCreate', async (message) => {
   // --- Comandos de Emojis ---
   const { handleEmojiCommand } = require('./commands/emoji');
   if (await handleEmojiCommand(message)) return;
+
+  // --- Comando de InvitaciÃ³n ---
+  if (message.content.startsWith('.invite')) {
+      const { execute } = require('./commands/invite');
+      return await execute(message);
+  }
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -1032,8 +1044,17 @@ client.on('interactionCreate', async (interaction) => {
 
     try {
         const command = interaction.commandName;
-        if (['play', 'stop', 'skip', 'next', 'previous', 'pause', 'resume', 'queue', 'help'].includes(command)) {
+        if (['play', 'stop', 'skip', 'next', 'previous', 'pause', 'resume', 'queue', 'help', 'invite'].includes(command)) {
+            if (command === 'invite') {
+                const { execute } = require('./commands/invite');
+                await execute(interaction);
+                return;
+            }
             await handleMusicSlashCommand(interaction);
+            return;
+        }
+        if (command === 'myplaylist') {
+            await handlePlaylistSlashCommand(interaction);
             return;
         }
         if (command.startsWith('playlist_')) {

@@ -16,6 +16,7 @@ class MusicManager {
         this.djAutoInterval = null;
         this.playbackSnapshotInterval = null;
         this.restoreInProgress = new Set();
+        this.idleTimeouts = new Map();
         this.nodeReady = false;
 
         if (!this.hasLavalinkConfig) {
@@ -95,6 +96,43 @@ class MusicManager {
 
         this.startDjAutoWatcher();
         this.startPlaybackSnapshotWatcher();
+    }
+
+    async handleVoiceStateUpdate(oldState, newState) {
+        const guildId = newState.guild.id;
+        const player = this.kazagumo?.players.get(guildId);
+        
+        if (!player) return;
+
+        const botVoiceChannelId = player.voiceId;
+        if (!botVoiceChannelId) return;
+
+        const voiceChannel = newState.guild.channels.cache.get(botVoiceChannelId);
+        if (!voiceChannel) return;
+
+        // Count non-bot members in the channel
+        const nonBotMembers = voiceChannel.members.filter(m => !m.user.bot).size;
+
+        if (nonBotMembers === 0) {
+            // Bot is alone, start timeout if not already started
+            if (!this.idleTimeouts.has(guildId)) {
+                console.log(`[MusicManager] Bot solo en ${guildId}. Iniciando cuenta regresiva de 30s.`);
+                const timeout = setTimeout(async () => {
+                    console.log(`[MusicManager] Canal vacio en ${guildId}. Desconectando por inactividad.`);
+                    logMusicEvent(guildId, 'info', 'Desconectado automáticamente: El canal de voz está vacío.');
+                    await this.stop(guildId);
+                    this.idleTimeouts.delete(guildId);
+                }, 30000); // 30 seconds
+                this.idleTimeouts.set(guildId, timeout);
+            }
+        } else {
+            // Someone is in the channel, clear timeout if exists
+            if (this.idleTimeouts.has(guildId)) {
+                console.log(`[MusicManager] Usuario detectado en ${guildId}. Cancelando auto-desconexión.`);
+                clearTimeout(this.idleTimeouts.get(guildId));
+                this.idleTimeouts.delete(guildId);
+            }
+        }
     }
 
     getRadioState(guildId) {
