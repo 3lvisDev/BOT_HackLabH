@@ -951,9 +951,20 @@ client.once('ready', () => {
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
+  const normalizedContent = String(message.content || '').trim().toLowerCase();
+  const isPrefixedCommand = normalizedContent.startsWith('.') || normalizedContent.startsWith('!');
   
-  if (message.content.startsWith('.') || message.content.startsWith('!')) {
+  if (isPrefixedCommand) {
       console.log(`[${timestamp()}] [Message] Recibido: "${message.content}" de ${message.author.tag}`);
+  }
+
+  // Evitar errores por comandos en DM para módulos que requieren servidor.
+  if (!message.guild && isPrefixedCommand) {
+    const dmAllowed = /^([.!])(help|invite)\b/.test(normalizedContent);
+    if (!dmAllowed) {
+      await message.reply('Este comando solo funciona dentro de un servidor.');
+      return;
+    }
   }
 
   // --- Tracking de Logros ---
@@ -980,6 +991,9 @@ client.on('messageCreate', async (message) => {
 
   if (message.content.startsWith('.setup_community')) {
     // Solo el creador del servidor original puede ejecutarlo por comando de texto
+    if (!message.guild) {
+      return message.reply('Este comando solo funciona dentro de un servidor.');
+    }
     if (message.guild.ownerId !== message.author.id) {
       return message.reply("Solo el creador del servidor puede ejecutar este comando manualmente.");
     }
@@ -1005,32 +1019,71 @@ client.on('messageCreate', async (message) => {
 
   // --- Comandos de Ayuda ---
   const { handleHelpCommand } = require('./commands/help');
-  if (await handleHelpCommand(message)) return;
+  try {
+    if (await handleHelpCommand(message)) return;
+  } catch (err) {
+    console.error('[MessageCommands] Error en help:', err.message);
+  }
 
   // --- Comandos de MÃºsica ---
   const { handleMusicCommand } = require('./commands/music');
-  if (await handleMusicCommand(message, musicManager)) return;
+  try {
+    if (await handleMusicCommand(message, musicManager)) return;
+  } catch (err) {
+    console.error('[MessageCommands] Error en music:', err.message);
+    if (isPrefixedCommand) await message.reply('Error ejecutando comando de música.');
+    return;
+  }
 
   // --- Comandos de Playlist ---
   const { handlePlaylistCommand } = require('./commands/playlist');
-  if (await handlePlaylistCommand(message, musicManager)) return;
+  try {
+    if (await handlePlaylistCommand(message, musicManager)) return;
+  } catch (err) {
+    console.error('[MessageCommands] Error en playlist:', err.message);
+    if (isPrefixedCommand) await message.reply('Error ejecutando comando de playlist.');
+    return;
+  }
 
   // --- Comandos de Tickets ---
   const { handleTicketCommand } = require('./commands/tickets');
-  if (await handleTicketCommand(message)) return;
+  try {
+    if (await handleTicketCommand(message)) return;
+  } catch (err) {
+    console.error('[MessageCommands] Error en tickets:', err.message);
+    if (isPrefixedCommand) await message.reply('Error ejecutando comando de tickets.');
+    return;
+  }
 
   // --- Comandos de AutoMod ---
   const { handleAutomodCommand } = require('./commands/automod');
-  if (await handleAutomodCommand(message)) return;
+  try {
+    if (await handleAutomodCommand(message)) return;
+  } catch (err) {
+    console.error('[MessageCommands] Error en automod:', err.message);
+    if (isPrefixedCommand) await message.reply('Error ejecutando comando de automod.');
+    return;
+  }
 
   // --- Comandos de Emojis ---
   const { handleEmojiCommand } = require('./commands/emoji');
-  if (await handleEmojiCommand(message)) return;
+  try {
+    if (await handleEmojiCommand(message)) return;
+  } catch (err) {
+    console.error('[MessageCommands] Error en emoji:', err.message);
+    if (isPrefixedCommand) await message.reply('Error ejecutando comando de emoji.');
+    return;
+  }
 
   // --- Comando de InvitaciÃ³n ---
-  if (message.content.startsWith('.invite')) {
+  if (/^([.!])invite\b/i.test(message.content)) {
       const { execute } = require('./commands/invite');
-      return await execute(message);
+      try {
+        return await execute(message);
+      } catch (err) {
+        console.error('[MessageCommands] Error en invite:', err.message);
+        return await message.reply('Error ejecutando comando de invitación.');
+      }
   }
 });
 
