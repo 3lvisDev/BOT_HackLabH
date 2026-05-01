@@ -17,6 +17,7 @@ class MusicManager {
         this.playbackSnapshotInterval = null;
         this.restoreInProgress = new Set();
         this.idleTimeouts = new Map();
+        this.pendingRadioPrefetch = new Map();
         this.nodeReady = false;
 
         if (!this.hasLavalinkConfig) {
@@ -71,6 +72,9 @@ class MusicManager {
                 currentTrack: track.title,
                 channelId: player.voiceId,
                 guildId: player.guildId
+            });
+            this.maybePrefetchRadioTrack(player).catch((error) => {
+                console.error('[MusicManager] Error en prefetch de radio:', error.message);
             });
         });
 
@@ -142,6 +146,7 @@ class MusicManager {
                 genreSeed: null,
                 recentIdentifiers: [],
                 recentFingerprints: [],
+                recentArtists: [],
                 lastTrack: null
             });
         }
@@ -186,6 +191,10 @@ class MusicManager {
         if (fingerprint) {
             state.recentFingerprints = [fingerprint, ...state.recentFingerprints.filter((fp) => fp !== fingerprint)].slice(0, 20);
         }
+        const artist = this.normalizeText(track.author);
+        if (artist) {
+            state.recentArtists = [artist, ...state.recentArtists.filter((name) => name !== artist)].slice(0, 25);
+        }
     }
 
     normalizeText(text) {
@@ -206,6 +215,28 @@ class MusicManager {
         const author = this.normalizeText(track?.author);
         const base = `${author}|${title}`.trim();
         return base || null;
+    }
+
+    scoreRadioCandidate(guildId, track) {
+        const state = this.getRadioState(guildId);
+        const fingerprint = this.buildTrackFingerprint(track);
+        const artist = this.normalizeText(track?.author);
+        const sameId = Boolean(track.identifier) && state.recentIdentifiers.includes(track.identifier);
+        const sameFingerprint = Boolean(fingerprint) && state.recentFingerprints.includes(fingerprint);
+        const repeatedArtist = Boolean(artist) && state.recentArtists.slice(0, 5).includes(artist);
+        const normalizedTitle = this.normalizeText(track?.title);
+        const lowQualityHint = /(live|karaoke|8d|nightcore|slowed|reverb)/.test(normalizedTitle);
+
+        if (sameId || sameFingerprint) {
+            return Number.NEGATIVE_INFINITY;
+        }
+
+        let score = 100;
+        if (repeatedArtist) score -= 25;
+        if (lowQualityHint) score -= 8;
+        if (track?.isStream) score -= 10;
+        if (track?.length && track.length > 0 && track.length < 90_000) score -= 6;
+        return score;
     }
 
     setLiveStream(guildId, streamUrl) {
@@ -364,27 +395,46 @@ class MusicManager {
     async findRelatedTrack(guildId) {
         const query = this.buildRadioQuery(guildId);
         if (!query) return null;
+        const state = this.getRadioState(guildId);
 
         const result = await this.kazagumo.search(query);
-        const state = this.getRadioState(guildId);
-        let candidate = result.tracks.find((track) => {
-            const fingerprint = this.buildTrackFingerprint(track);
-            const sameId = Boolean(track.identifier) && state.recentIdentifiers.includes(track.identifier);
-            const sameFingerprint = Boolean(fingerprint) && state.recentFingerprints.includes(fingerprint);
-            return !sameId && !sameFingerprint;
-        }) || null;
+        const pickBest = (tracks = []) => {
+            const ranked = tracks
+                .map((track) => ({ track, score: this.scoreRadioCandidate(guildId, track) }))
+                .filter((item) => Number.isFinite(item.score))
+                .sort((a, b) => b.score - a.score);
+            return ranked[0]?.track || null;
+        };
+        let candidate = pickBest(result.tracks);
 
         if (!candidate && state.genreSeed) {
             const fallback = await this.kazagumo.search(`${state.genreSeed} radio mix`);
-            candidate = fallback.tracks.find((track) => {
-                const fingerprint = this.buildTrackFingerprint(track);
-                const sameId = Boolean(track.identifier) && state.recentIdentifiers.includes(track.identifier);
-                const sameFingerprint = Boolean(fingerprint) && state.recentFingerprints.includes(fingerprint);
-                return !sameId && !sameFingerprint;
-            }) || null;
+            candidate = pickBest(fallback.tracks);
         }
 
         return candidate;
+    }
+
+    async maybePrefetchRadioTrack(player) {
+        if (!player?.guildId || !player?.queue) return;
+        const guildId = player.guildId;
+        const state = this.getRadioState(guildId);
+        if (!state.enabled) return;
+        if (this.getLiveStream(guildId)) return;
+        if (this.pendingRadioPrefetch.has(guildId)) return;
+        if (player.queue.size > 1) return;
+
+        const prefetchPromise = (async () => {
+            const nextTrack = await this.findRelatedTrack(guildId);
+            if (!nextTrack) return;
+            player.queue.add(nextTrack);
+            logMusicEvent(guildId, 'info', `Modo radio: prefetch ${nextTrack.title}`);
+        })().finally(() => {
+            this.pendingRadioPrefetch.delete(guildId);
+        });
+
+        this.pendingRadioPrefetch.set(guildId, prefetchPromise);
+        await prefetchPromise;
     }
 
     async handlePlayerEmpty(player) {
