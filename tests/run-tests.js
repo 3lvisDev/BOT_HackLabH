@@ -70,7 +70,9 @@ function runMaybeAsync(fn) {
 async function main() {
   const files = [
     'bugfix-welcome-goodbye.test.js',
-    'preservation.test.js'
+    'preservation.test.js',
+    'music-seed-learning.test.js',
+    'music-memory-client.test.js'
   ];
 
   for (const file of files) {

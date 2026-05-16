@@ -646,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else selectedMods = selectedMods.filter(u => u.id !== uid);
     };
 
-    setupBtn.addEventListener('click', async () => {
+    setupBtn?.addEventListener('click', async () => {
         if (!confirm('¿Ejecutar configuración avanzada?')) return;
         setupBtn.disabled = true;
         logContent.innerHTML = '⚙️ Iniciando migración...\n';
@@ -674,7 +674,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setupBtn.disabled = false;
     });
 
-    restartBtn.addEventListener('click', async () => {
+    restartBtn?.addEventListener('click', async () => {
         if (confirm('¿Reiniciar bot?')) {
             fetch('/api/restart', { method: 'POST' });
             reconnectOverlay.classList.remove('hidden');
@@ -684,7 +684,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    logoutBtn.addEventListener('click', () => {
+    logoutBtn?.addEventListener('click', () => {
         logoutBtn.disabled = true;
         logoutBtn.textContent = 'Cerrando sesión…';
         fetch('/api/logout', { method: 'POST' }).then(() => window.location.reload());
@@ -747,13 +747,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 const resSettings = await fetch('/api/settings/welcome');
                 if (resSettings.ok) {
                     const data = await resSettings.json();
-                    document.getElementById('welcome-toggle').checked = data.welcome_enabled;
-                    document.getElementById('welcome-channel').value = data.welcome_channel || '';
-                    document.getElementById('welcome-msg').value = data.welcome_message;
-                    
-                    document.getElementById('goodbye-toggle').checked = data.goodbye_enabled;
-                    document.getElementById('goodbye-channel').value = data.goodbye_channel || '';
-                    document.getElementById('goodbye-msg').value = data.goodbye_message;
+                    const welcomeToggle = document.getElementById('welcome-toggle');
+                    const welcomeChannel = document.getElementById('welcome-channel');
+                    const welcomeMsg = document.getElementById('welcome-msg');
+                    const goodbyeToggle = document.getElementById('goodbye-toggle');
+                    const goodbyeChannel = document.getElementById('goodbye-channel');
+                    const goodbyeMsg = document.getElementById('goodbye-msg');
+
+                    if (welcomeToggle) welcomeToggle.checked = Boolean(data.welcome_enabled);
+                    if (welcomeChannel) welcomeChannel.value = data.welcome_channel || '';
+                    if (welcomeMsg) welcomeMsg.value = data.welcome_message || '';
+                    if (goodbyeToggle) goodbyeToggle.checked = Boolean(data.goodbye_enabled);
+                    if (goodbyeChannel) goodbyeChannel.value = data.goodbye_channel || '';
+                    if (goodbyeMsg) goodbyeMsg.value = data.goodbye_message || '';
                 }
             }, 100);
         } catch (err) { console.error("Error al cargar configuración", err); }
@@ -1063,13 +1069,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function automodAction(action, word = '') {
+    async function automodAction(action, word = '', preset = '') {
         const output = document.getElementById('automod-console');
         try {
             const res = await fetch('/api/automod/action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action, word })
+                body: JSON.stringify({ action, word, preset })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Error en AutoMod');
@@ -1229,6 +1235,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!word) return alert('Escribe una palabra para AutoMod.');
         automodAction('remove', word);
     });
+    document.getElementById('automod-preset-relaxed-btn')?.addEventListener('click', () => automodAction('preset', '', 'relaxed'));
+    document.getElementById('automod-preset-balanced-btn')?.addEventListener('click', () => automodAction('preset', '', 'balanced'));
+    document.getElementById('automod-preset-strict-btn')?.addEventListener('click', () => automodAction('preset', '', 'strict'));
 
     // --- Personal Playlists Logic ---
     let myCurrentPlaylist = null;

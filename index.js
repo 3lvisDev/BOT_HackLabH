@@ -19,7 +19,7 @@ if (!globalThis.File) {
 
 const { Client, GatewayIntentBits, Partials, ActivityType, PermissionsBitField, ChannelType } = require('discord.js');
 const db = require('./db');
-const { getGuildConfig, setGuildConfig } = db;
+const { getGuildConfig, setGuildConfig, setGuildLanguage } = db;
 const { validateEnvironmentVariables } = require('./env-validator');
 const { logSystemEvent } = require('./music/logger');
 const { startInternalApi } = require('./internal-api');
@@ -43,6 +43,7 @@ process.on('uncaughtException', (error) => {
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
@@ -75,7 +76,15 @@ async function handleMusicSlashCommand(interaction) {
     const guildId = interaction.guildId;
     const command = interaction.commandName;
     const locale = resolveInteractionLocale(interaction);
-    const voiceChannel = interaction.member?.voice?.channel;
+    let voiceChannel = interaction.member?.voice?.channel || null;
+    if (!voiceChannel && interaction.guild && interaction.user?.id) {
+        try {
+            const freshMember = await interaction.guild.members.fetch(interaction.user.id);
+            voiceChannel = freshMember?.voice?.channel || null;
+        } catch (error) {
+            console.warn('[Voice] No se pudo refrescar miembro para slash command:', error.message);
+        }
+    }
     const status = musicManager.getStatus(guildId);
 
     const requireVoiceInSameChannel = async (actionText) => {
@@ -107,11 +116,49 @@ async function handleMusicSlashCommand(interaction) {
         }
         await interaction.reply(processingText);
         try {
-            const result = await musicManager.play(guildId, voiceChannel.id, queryRaw);
+            const result = await musicManager.play(guildId, voiceChannel.id, queryRaw, { requesterId: interaction.user?.id });
             await interaction.editReply(`Reproduciendo ahora: **${result.title}** en el canal **${result.channel}** â€¢ Radio ${result.radioEnabled ? 'activado' : 'desactivado'}`);
         } catch (err) {
             await interaction.editReply(`Error: ${err.message}`);
         }
+        return;
+    }
+
+    if (command === 'radio') {
+        const action = interaction.options.getString('accion', true);
+        const genre = interaction.options.getString('genero');
+        const mode = musicManager.getRadioMode(guildId);
+
+        if (action === 'status') {
+            await interaction.reply(`📻 Radio ${mode.enabled ? 'activada' : 'desactivada'}${mode.genre ? ` • Semilla: **${mode.genre}**` : ''}`);
+            return;
+        }
+
+        if (action === 'off') {
+            await musicManager.setRadioMode(guildId, false);
+            await interaction.reply('🛑 Radio desactivada.');
+            return;
+        }
+
+        if (action === 'reset') {
+            const nextMode = musicManager.resetRadioAlgorithm(guildId, { preserveGenre: true });
+            await interaction.reply(
+                `Algoritmo de radio reiniciado${nextMode.genre ? ` (semilla actual: **${nextMode.genre}**)` : ''}.`
+            );
+            return;
+        }
+
+        if (!voiceChannel) {
+            await interaction.reply({ content: 'Debes estar en un canal de voz.', ephemeral: true });
+            return;
+        }
+
+        if (genre) {
+            await musicManager.setRadioGenre(guildId, genre);
+        }
+        const nextMode = await musicManager.setRadioMode(guildId, true);
+        const seed = nextMode.genre || genre || 'mix variado';
+        await interaction.reply(`✅ Radio activada${seed ? ` con semilla **${seed}**` : ''}.`);
         return;
     }
 
@@ -953,6 +1000,7 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   const normalizedContent = String(message.content || '').trim().toLowerCase();
   const isPrefixedCommand = normalizedContent.startsWith('.') || normalizedContent.startsWith('!');
+  let guildLocale = 'es';
   
   if (isPrefixedCommand) {
       console.log(`[${timestamp()}] [Message] Recibido: "${message.content}" de ${message.author.tag}`);
@@ -965,6 +1013,46 @@ client.on('messageCreate', async (message) => {
       await message.reply('Este comando solo funciona dentro de un servidor.');
       return;
     }
+  }
+
+  if (message.guild) {
+    try {
+      const cfg = await getGuildConfig(message.guild.id);
+      const preferredLanguage = cfg?.preferred_language || 'es';
+      message.guild.preferred_language = preferredLanguage;
+      guildLocale = preferredLanguage;
+    } catch (err) {
+      console.error('[i18n] No se pudo resolver idioma de servidor:', err.message);
+    }
+  }
+
+  if (/^([.!])lang(\s+|$)/i.test(message.content)) {
+    if (!message.guild) {
+      await message.reply('Este comando solo funciona dentro de un servidor.');
+      return;
+    }
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+      await message.reply('Necesitas permiso **Gestionar servidor** para cambiar idioma.');
+      return;
+    }
+
+    const [, rawLang] = String(message.content || '').trim().split(/\s+/, 2);
+    if (!rawLang) {
+      const current = guildLocale === 'en' ? t(guildLocale, 'language_en') : t(guildLocale, 'language_es');
+      await message.reply(t(guildLocale, 'language_current', { language: current }));
+      return;
+    }
+
+    if (!['es', 'en'].includes(rawLang.toLowerCase())) {
+      await message.reply(t(guildLocale, 'language_usage'));
+      return;
+    }
+
+    const next = await setGuildLanguage(message.guild.id, rawLang.toLowerCase());
+    message.guild.preferred_language = next;
+    const languageLabel = next === 'en' ? t(next, 'language_en') : t(next, 'language_es');
+    await message.reply(t(next, 'language_set', { language: languageLabel }));
+    return;
   }
 
   // --- Tracking de Logros ---
@@ -1089,6 +1177,16 @@ client.on('messageCreate', async (message) => {
 
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
+    if (interaction.guildId) {
+        try {
+            const cfg = await getGuildConfig(interaction.guildId);
+            if (interaction.guild && cfg?.preferred_language) {
+                interaction.guild.preferred_language = cfg.preferred_language;
+            }
+        } catch (err) {
+            console.error('[i18n] No se pudo resolver idioma en interaction:', err.message);
+        }
+    }
     const locale = resolveInteractionLocale(interaction);
     if (!interaction.inGuild()) {
         await interaction.reply({ content: t(locale, 'slash_guild_only'), ephemeral: true });
@@ -1097,7 +1195,7 @@ client.on('interactionCreate', async (interaction) => {
 
     try {
         const command = interaction.commandName;
-        if (['play', 'stop', 'skip', 'next', 'previous', 'pause', 'resume', 'queue', 'help', 'invite'].includes(command)) {
+  if (['play', 'radio', 'stop', 'skip', 'next', 'previous', 'pause', 'resume', 'queue', 'musicstats', 'help', 'invite'].includes(command)) {
             if (command === 'invite') {
                 const { execute } = require('./commands/invite');
                 await execute(interaction);

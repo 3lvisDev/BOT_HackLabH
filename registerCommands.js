@@ -15,7 +15,22 @@ const commands = [
     new SlashCommandBuilder().setName('pause').setDescription('Pausa la reproducción actual'),
     new SlashCommandBuilder().setName('resume').setDescription('Reanuda la música pausada'),
     new SlashCommandBuilder().setName('queue').setDescription('Muestra la lista de canciones en espera'),
-    new SlashCommandBuilder().setName('radio').setDescription('Activa/Desactiva el modo radio basado en un género'),
+    new SlashCommandBuilder()
+        .setName('radio')
+        .setDescription('Controla el modo radio inteligente')
+        .addStringOption(opt => opt
+            .setName('accion')
+            .setDescription('Encender, apagar o ver estado')
+            .setRequired(true)
+            .addChoices(
+                { name: 'on', value: 'on' },
+                { name: 'off', value: 'off' },
+                { name: 'status', value: 'status' },
+                { name: 'reset', value: 'reset' }
+            ))
+        .addStringOption(opt => opt
+            .setName('genero')
+            .setDescription('Género o artista semilla (opcional)')),
 
     // --- Playlists Personales ---
     new SlashCommandBuilder()

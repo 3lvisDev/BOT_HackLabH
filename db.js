@@ -39,7 +39,8 @@ async function initDB() {
                 CREATE TABLE IF NOT EXISTS guild_configs (
                     guild_id TEXT PRIMARY KEY,
                     base_role_id TEXT,
-                    is_configured BOOLEAN DEFAULT 0
+                    is_configured BOOLEAN DEFAULT 0,
+                    preferred_language TEXT DEFAULT 'es'
                 );
                 CREATE TABLE IF NOT EXISTS welcome_settings (
                     guild_id TEXT PRIMARY KEY,
@@ -108,7 +109,16 @@ async function initDB() {
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY(playlist_id) REFERENCES user_playlists(id) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS user_music_preferences (
+                    guild_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    seed TEXT NOT NULL,
+                    play_count INTEGER DEFAULT 1,
+                    last_used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (guild_id, user_id, seed)
+                );
             `);
+                await ensureColumn(db, 'guild_configs', 'preferred_language', 'TEXT DEFAULT \'es\'');
                 await ensureMusicSettingsSchema(db);
                 return db;
             } catch (err) {
@@ -140,6 +150,19 @@ async function setGuildConfig(guildId, baseRoleId) {
          is_configured=1`,
         [guildId, baseRoleId]
     );
+}
+
+async function setGuildLanguage(guildId, language) {
+    const db = await initDB();
+    const preferredLanguage = String(language || 'es').toLowerCase().startsWith('en') ? 'en' : 'es';
+    await db.run(
+        `INSERT INTO guild_configs (guild_id, preferred_language, is_configured)
+         VALUES (?, ?, 1)
+         ON CONFLICT(guild_id) DO UPDATE SET
+         preferred_language=excluded.preferred_language`,
+        [guildId, preferredLanguage]
+    );
+    return preferredLanguage;
 }
 
 async function getSettings(guildId) {
@@ -387,11 +410,40 @@ async function removeUserPlaylistItem(playlistId, position) {
     return false;
 }
 
+async function recordUserMusicPreference(guildId, userId, seed) {
+    const db = await initDB();
+    const normalizedSeed = String(seed || '').trim();
+    if (!guildId || !userId || !normalizedSeed) return;
+    await db.run(
+        `INSERT INTO user_music_preferences (guild_id, user_id, seed, play_count, last_used_at)
+         VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+         ON CONFLICT(guild_id, user_id, seed) DO UPDATE SET
+         play_count = user_music_preferences.play_count + 1,
+         last_used_at = CURRENT_TIMESTAMP`,
+        [guildId, userId, normalizedSeed]
+    );
+}
+
+async function getUserTopMusicPreference(guildId, userId) {
+    const db = await initDB();
+    if (!guildId || !userId) return null;
+    return db.get(
+        `SELECT seed, play_count, last_used_at
+         FROM user_music_preferences
+         WHERE guild_id = ? AND user_id = ?
+         ORDER BY play_count DESC, last_used_at DESC
+         LIMIT 1`,
+        [guildId, userId]
+    );
+}
+
 module.exports = { 
     initDB, getGuildConfig, setGuildConfig, getSettings, updateSettings, 
+    setGuildLanguage,
     updateUserStats, getAllAchievements, createAchievement, getUserAchievements, earnAchievement,
     getMusicSettings, updateMusicSettings, logMusicEvent, getMusicLogs,
     createTicket, getTickets, closeTicket,
     createUserPlaylist, getUserPlaylists, getUserPlaylistByName, deleteUserPlaylist, addUserPlaylistItem, getUserPlaylistItems, removeUserPlaylistItem,
+    recordUserMusicPreference, getUserTopMusicPreference,
     encrypt, decrypt
 };

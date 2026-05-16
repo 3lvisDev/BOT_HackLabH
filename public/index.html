@@ -11,7 +11,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=1.0.2">
+    <link rel="stylesheet" href="style.css?v=1.0.3">
     <script src="sanitize.js"></script>
 </head>
 
@@ -114,6 +114,13 @@
                         </svg>
                         <span>Bienvenidas</span>
                     </button>
+                    <button type="button" class="nav-item" data-screen="automod-screen">
+                        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2l7 4v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-4z"></path>
+                            <path d="M9 12l2 2 4-4"></path>
+                        </svg>
+                        <span>AutoMod</span>
+                    </button>
                 </div>
 
                 <div class="owner-only-menu hidden">
@@ -180,6 +187,31 @@
                 </div>
             </section>
 
+            
+
+            <section id="automod-screen" class="screen-view">
+                <div class="screen-header"><h2>AutoMod</h2></div>
+                <div class="card">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                        <button type="button" id="automod-status-btn" class="btn-secondary">Estado</button>
+                        <button type="button" id="automod-enable-btn" class="btn-secondary">Activar Keywords</button>
+                        <button type="button" id="automod-disable-btn" class="btn-secondary">Desactivar Keywords</button>
+                        <button type="button" id="automod-list-btn" class="btn-secondary">Ver Palabras</button>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                        <input id="automod-word-input" class="glass-input" type="text" placeholder="palabra..." autocomplete="off" />
+                        <button type="button" id="automod-add-btn" class="btn-primary">Agregar</button>
+                        <button type="button" id="automod-remove-btn" class="btn-secondary">Quitar</button>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                        <button type="button" id="automod-preset-relaxed-btn" class="btn-secondary">Preset Relaxed</button>
+                        <button type="button" id="automod-preset-balanced-btn" class="btn-secondary">Preset Balanced</button>
+                        <button type="button" id="automod-preset-strict-btn" class="btn-secondary">Preset Strict</button>
+                    </div>
+                    <pre id="automod-console" style="white-space:pre-wrap;background:#0b1220;border:1px solid #22314d;border-radius:10px;padding:12px;min-height:120px;">AutoMod listo.</pre>
+                </div>
+            </section>
+
             <section id="env-screen" class="screen-view">
                 <div class="screen-header"><h2>Variables</h2></div>
                 <div id="env-variables-list"></div>
@@ -195,6 +227,6 @@
         </div>
     </div>
 
-    <script src="script.js?v=1.0.4"></script>
+    <script src="script.js?v=1.0.6"></script>
 </body>
 </html>

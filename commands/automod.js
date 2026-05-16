@@ -7,6 +7,10 @@
 const { resolveGuildLocale, resolveInteractionLocale, t } = require('../utils/i18n');
 
 const RULE_NAME = 'HackLabH AutoMod Keywords';
+const RULE_SPAM = 'HackLabH AutoMod Spam';
+const RULE_MENTION = 'HackLabH AutoMod Mention Spam';
+const RULE_INVITES = 'HackLabH AutoMod Invite Links';
+const RULE_LINKS = 'HackLabH AutoMod External Links';
 const KEYWORD_LIMIT = 1000;
 
 function normalizeWord(word) {
@@ -32,6 +36,7 @@ function parseAutomodAction(raw) {
   if (['status', 'estado'].includes(head)) return { type: 'status' };
   if (['on', 'enable', 'activar'].includes(head)) return { type: 'enable' };
   if (['off', 'disable', 'desactivar'].includes(head)) return { type: 'disable' };
+  if (['preset', 'modo'].includes(head)) return { type: 'preset', preset: second || tokens[1] || '' };
   if (['words', 'palabras', 'keywords'].includes(head)) {
     if (['list', 'lista'].includes(second)) return { type: 'list' };
     if (['add', 'agregar'].includes(second)) return { type: 'add', word: rest };
@@ -43,6 +48,11 @@ function parseAutomodAction(raw) {
 async function getKeywordRule(guild) {
   const rules = await guild.autoModerationRules.fetch();
   return rules.find((rule) => rule.name === RULE_NAME) || null;
+}
+
+async function getRuleByName(guild, name) {
+  const rules = await guild.autoModerationRules.fetch();
+  return rules.find((rule) => rule.name === name) || null;
 }
 
 function getRuleWords(rule) {
@@ -115,19 +125,106 @@ async function setRuleEnabled(guild, enabled) {
   return rule.edit({ enabled: Boolean(enabled), reason: 'HackLabH AutoMod toggle' });
 }
 
+async function upsertRule(guild, payload) {
+  const existing = await getRuleByName(guild, payload.name);
+  if (!existing) {
+    return guild.autoModerationRules.create({
+      ...payload,
+      eventType: AutoModerationRuleEventType.MessageSend,
+      actions: [
+        {
+          type: AutoModerationActionType.BlockMessage,
+          metadata: { customMessage: 'Mensaje bloqueado por AutoMod.' }
+        }
+      ],
+      enabled: true,
+      reason: 'HackLabH AutoMod preset'
+    });
+  }
+  return existing.edit({
+    triggerMetadata: payload.triggerMetadata,
+    enabled: true,
+    reason: 'HackLabH AutoMod preset update'
+  });
+}
+
+async function applyPreset(guild, preset) {
+  const p = String(preset || '').toLowerCase();
+  if (!['relaxed', 'balanced', 'strict'].includes(p)) {
+    throw new Error('Preset invalido. Usa relaxed, balanced o strict.');
+  }
+
+  const mentionLimit = p === 'strict' ? 3 : (p === 'balanced' ? 5 : 8);
+  const spamEnabled = p !== 'relaxed';
+  const linksEnabled = p !== 'relaxed';
+
+  await upsertRule(guild, {
+    name: RULE_SPAM,
+    triggerType: AutoModerationRuleTriggerType.Spam,
+    triggerMetadata: {}
+  });
+  const spamRule = await getRuleByName(guild, RULE_SPAM);
+  if (spamRule) {
+    await spamRule.edit({ enabled: spamEnabled, reason: 'HackLabH AutoMod preset spam toggle' });
+  }
+
+  await upsertRule(guild, {
+    name: RULE_MENTION,
+    triggerType: AutoModerationRuleTriggerType.MentionSpam,
+    triggerMetadata: { mentionTotalLimit: mentionLimit }
+  });
+
+  await upsertRule(guild, {
+    name: RULE_INVITES,
+    triggerType: AutoModerationRuleTriggerType.Keyword,
+    triggerMetadata: { regexPatterns: ['discord\\.gg\\/', 'discord(app)?\\.com\\/invite\\/'] }
+  });
+
+  await upsertRule(guild, {
+    name: RULE_LINKS,
+    triggerType: AutoModerationRuleTriggerType.Keyword,
+    triggerMetadata: { regexPatterns: ['https?:\\/\\/[^\\s]+'] }
+  });
+  const linkRule = await getRuleByName(guild, RULE_LINKS);
+  if (linkRule) {
+    await linkRule.edit({ enabled: linksEnabled, reason: 'HackLabH AutoMod preset links toggle' });
+  }
+
+  return `Preset AutoMod aplicado: ${p.toUpperCase()} (spam:${spamEnabled ? 'on' : 'off'}, links:${linksEnabled ? 'on' : 'off'}, mention-limit:${mentionLimit}).`;
+}
+
+async function buildFullStatus(guild, locale) {
+  const keywordRule = await getKeywordRule(guild);
+  const words = getRuleWords(keywordRule);
+  const spamRule = await getRuleByName(guild, RULE_SPAM);
+  const mentionRule = await getRuleByName(guild, RULE_MENTION);
+  const inviteRule = await getRuleByName(guild, RULE_INVITES);
+  const linksRule = await getRuleByName(guild, RULE_LINKS);
+
+  const on = locale === 'en' ? 'ON' : 'ACTIVO';
+  const off = locale === 'en' ? 'OFF' : 'INACTIVO';
+  const boolTxt = (v) => (v ? on : off);
+  const mentionLimit = mentionRule?.triggerMetadata?.mentionTotalLimit ?? '-';
+
+  return [
+    '🛡️ AutoMod Status',
+    `• Keywords: ${boolTxt(Boolean(keywordRule?.enabled))} (${words.length} palabras)`,
+    `• Spam: ${boolTxt(Boolean(spamRule?.enabled))}`,
+    `• Mention Spam: ${boolTxt(Boolean(mentionRule?.enabled))} (límite ${mentionLimit})`,
+    `• Invite Links: ${boolTxt(Boolean(inviteRule?.enabled))}`,
+    `• External Links: ${boolTxt(Boolean(linksRule?.enabled))}`,
+    '',
+    'Presets: relaxed | balanced | strict'
+  ].join('\n');
+}
+
 function hasInteractionManagePermission(interaction) {
   return interaction?.memberPermissions?.has?.(PermissionsBitField.Flags.ManageGuild);
 }
 
 async function runAction(guild, locale, action) {
   if (action.type === 'status') {
-    const rule = await getKeywordRule(guild);
-    if (!rule) return t(locale, 'automod_status_none');
-    const words = getRuleWords(rule);
-    return t(locale, 'automod_status', {
-      enabled: rule.enabled ? t(locale, 'automod_enabled') : t(locale, 'automod_disabled'),
-      count: words.length
-    });
+    return buildFullStatus(guild, locale);
   }
 
   if (action.type === 'enable') {
@@ -171,6 +268,10 @@ async function runAction(guild, locale, action) {
     if (result.missingRule) return t(locale, 'automod_need_rule');
     if (result.missingWord) return t(locale, 'automod_word_missing');
     return t(locale, 'automod_word_removed', { word });
+  }
+
+  if (action.type === 'preset') {
+    return applyPreset(guild, action.preset);
   }
 
   return t(locale, 'automod_usage');

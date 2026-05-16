@@ -97,6 +97,9 @@ HackLabH Bot is a production-ready Discord bot focused on community growth, musi
 - Privacy: [panel.hacklabh.xyz/privacy](https://panel.hacklabh.xyz/privacy)
 - Support: [discord.gg/BX9mTRekGx](https://discord.gg/BX9mTRekGx)
 
+Website source (separate from panel): [`/website`](./website)  
+Deploy guide: [`docs/deploy/WWW_HACKLABH_XYZ.md`](./docs/deploy/WWW_HACKLABH_XYZ.md)
+
 ---
 
 ## ⚙️ Quick Setup

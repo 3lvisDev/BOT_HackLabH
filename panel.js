@@ -69,12 +69,14 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
   app.use('/api/', apiLimiter);
   
   app.use(session({
+    name: 'hacklabh.sid',
     secret: process.env.WEB_ADMIN_PASSWORD || 'hacklab-secret-fallback-12345',
-    resave: true,
-    saveUninitialized: true,
+    resave: false,
+    saveUninitialized: false,
+    proxy: true,
     cookie: { 
-      secure: false, 
-      httpOnly: false, // Permitimos acceso desde JS para debug
+      secure: 'auto',
+      httpOnly: true,
       sameSite: 'lax', 
       maxAge: 1000 * 60 * 60 * 24 
     }
@@ -168,11 +170,8 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
     if (!DISCORD_CLIENT_ID) {
         return res.status(500).send("La variable DISCORD_CLIENT_ID no está configurada en .env");
     }
-    // Priorizamos la IP/Host desde donde el usuario entra para evitar problemas de localhost vs IP
-    const host = req.get('host');
-    const redirectUri = `http://${host}/api/auth/callback`;
-    
-    console.log(`[Auth] Iniciando login. Redirect detectado: ${redirectUri}`);
+    const redirectUri = process.env.DISCORD_REDIRECT_URI || `https://${req.get('host')}/api/auth/callback`;
+    console.log(`[Auth] Iniciando login. Redirect URI: ${redirectUri}`);
     
     const url = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=identify%20guilds`;
     res.redirect(url);
@@ -308,31 +307,44 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
       setTimeout(() => process.exit(0), 1000);
   });
 
-  app.get('/api/status', authMiddleware, (req, res) => {
-    const guildId = getActiveGuildId(req);
+  app.get('/api/status', authMiddleware, async (req, res) => {
+    try {
+      const guildId = getActiveGuildId(req);
+      const { data: status } = await axios.get(`${BOT_API}/internal/status`);
+      let activeGuildName = null;
+      let userCount = status?.totalMemberCount || 0;
 
-    res.json({
-      online: true,
-      botTag: discordClient.user.tag,
-      botAvatar: discordClient.user.displayAvatarURL(),
-      guildCount: discordClient.guilds.cache.size,
-      userCount: guild ? guild.memberCount : discordClient.guilds.cache.reduce((acc, g) => acc + g.memberCount, 0),
-      activeGuildId: guild?.id || null,
-      activeGuildName: guild?.name || null
-    });
+      if (guildId) {
+        try {
+          const { data: guild } = await axios.get(`${BOT_API}/internal/guilds/${guildId}`);
+          activeGuildName = guild?.name || null;
+          if (typeof guild?.memberCount === 'number') userCount = guild.memberCount;
+        } catch (_) {}
+      }
+
+      res.json({
+        online: Boolean(status?.online),
+        botTag: status?.botTag || 'HackLabH Bot',
+        botAvatar: status?.botAvatar || null,
+        guildCount: status?.guildCount || 0,
+        userCount,
+        activeGuildId: guildId || null,
+        activeGuildName
+      });
+    } catch (err) {
+      console.error("? [Dashboard] Error en /api/status:", err.message);
+      res.status(500).json({ error: 'Error' });
+    }
   });
 
   app.get('/api/roles', authMiddleware, guildManagerMiddleware, async (req, res) => {
     try {
         const guildId = getActiveGuildId(req);
-        if (!guild) return res.json([]);
-        const roles = guild.roles.cache
-            .filter(r => r.name !== '@everyone' && !r.managed && !(r.name.includes("━━") || r.name.includes("══") || r.name.includes("---")))
-            .sort((a, b) => b.position - a.position)
-            .map(r => ({ id: r.id, name: r.name, color: r.hexColor }));
-        res.json(roles);
+        if (!guildId) return res.json([]);
+        const { data } = await axios.get(`${BOT_API}/internal/guilds/${guildId}/roles`);
+        res.json(Array.isArray(data) ? data : []);
     } catch (err) { 
-        console.error("❌ [Dashboard] Error en /api/roles:", err);
+        console.error("? [Dashboard] Error en /api/roles:", err);
         res.status(500).json({ error: 'Error' }); 
     }
   });
@@ -340,24 +352,14 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
   app.get('/api/users', authMiddleware, guildManagerMiddleware, async (req, res) => {
     try {
       const guildId = getActiveGuildId(req);
-      if (!guild) {
-        console.warn("⚠️ [Dashboard] No se encontró ninguna guild en la cache para /api/users.");
+      if (!guildId) {
+        console.warn("?? [Dashboard] No se encontr? guildId activo para /api/users.");
         return res.json([]);
       }
-      
-      console.log(`🔍 [Dashboard] Fetching members for: ${guild.name}`);
-      const members = await guild.members.fetch();
-      res.json(members.map(m => ({
-        id: m.user.id,
-        username: m.user.username,
-        displayName: m.displayName,
-        avatarUrl: m.user.displayAvatarURL({ size: 64 }),
-        roles: m.roles.cache.filter(r => r.name !== '@everyone').map(r => ({ id: r.id, name: r.name, color: r.hexColor })),
-        isAdmin: m.permissions.has('Administrator'),
-        isBot: m.user.bot
-      })));
+      const { data } = await axios.get(`${BOT_API}/internal/guilds/${guildId}/members`);
+      res.json(Array.isArray(data) ? data : []);
     } catch (err) { 
-      console.error("❌ [Dashboard] Error en /api/users:", err);
+      console.error("? [Dashboard] Error en /api/users:", err);
       res.status(500).json({ error: 'Error' }); 
     }
   });
@@ -365,18 +367,14 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
   app.get('/api/guild/channels', authMiddleware, guildManagerMiddleware, async (req, res) => {
     try {
         const guildId = getActiveGuildId(req);
-        if (!guild) {
-            console.log("⚠️ [Dashboard] No se encontró ninguna guild en la cache.");
+        if (!guildId) {
+            console.log("?? [Dashboard] No se encontr? guildId activo.");
             return res.json([]);
         }
-
-        console.log(`🔍 [Dashboard] Buscando canales para la guild: ${guild.name} (${guildId})`);
-        const channels = buildGuildChannels(guild);
-        
-        console.log(`✅ [Dashboard] Encontrados ${channels.length} canales de texto.`);
-        res.json(channels);
+        const { data } = await axios.get(`${BOT_API}/internal/guilds/${guildId}/channels`);
+        res.json(Array.isArray(data) ? data : []);
     } catch (err) { 
-        console.error("❌ [Dashboard] Error en /api/guild/channels:", err);
+        console.error("? [Dashboard] Error en /api/guild/channels:", err);
         res.status(500).json({ error: 'Error' }); 
     }
   });
@@ -433,8 +431,16 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
   });
 
   // Dashboard is read-only for music status
-  app.get('/api/music/status', authMiddleware, (req, res) => {
-      res.json(musicManager.getStatus());
+  app.get('/api/music/status', authMiddleware, async (req, res) => {
+      try {
+          const guildId = getActiveGuildId(req);
+          if (!guildId) return res.json({});
+          const { data } = await axios.get(`${BOT_API}/internal/music/${guildId}/status`);
+          res.json(data || {});
+      } catch (err) {
+          console.error("? [Dashboard] Error en /api/music/status:", err.message);
+          res.status(500).json({ error: 'Error' });
+      }
   });
 
   app.get('/api/music/logs', authMiddleware, async (req, res) => {
@@ -448,7 +454,7 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
   app.get('/api/logs/system', authMiddleware, async (req, res) => {
     try {
         const guildId = getActiveGuildId(req);
-        const logs = await db.getSystemLogs(guild ? guildId : null);
+        const logs = await db.getSystemLogs(guildId || null);
         res.json(logs);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -630,7 +636,8 @@ const BOT_API = process.env.BOT_API_URL || 'http://localhost:9667';
           const guildId = getActiveGuildId(req);
           const action = String(req.body?.action || '').trim().toLowerCase();
           const word = String(req.body?.word || '').trim();
-          const { data } = await axios.post(`${BOT_API}/internal/automod/${guildId}`, { action, word });
+          const preset = String(req.body?.preset || '').trim().toLowerCase();
+          const { data } = await axios.post(`${BOT_API}/internal/automod/${guildId}`, { action, word, preset });
           res.json({ success: true, message: data.message });
       } catch (err) { res.status(400).json({ error: err.response?.data?.error || err.message }); }
   });

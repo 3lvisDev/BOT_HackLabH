@@ -30,6 +30,27 @@ const commands = [
   new SlashCommandBuilder().setName('pause').setDescription('Pausa la reproducción'),
   new SlashCommandBuilder().setName('resume').setDescription('Reanuda la reproducción'),
   new SlashCommandBuilder().setName('queue').setDescription('Muestra la cola de reproducción'),
+  new SlashCommandBuilder()
+    .setName('radio')
+    .setDescription('Controla el modo radio inteligente')
+    .addStringOption((option) =>
+      option
+        .setName('accion')
+        .setDescription('Encender, apagar, estado o reset')
+        .setRequired(true)
+        .addChoices(
+          { name: 'on', value: 'on' },
+          { name: 'off', value: 'off' },
+          { name: 'status', value: 'status' },
+          { name: 'reset', value: 'reset' }
+        )
+    )
+    .addStringOption((option) =>
+      option
+        .setName('genero')
+        .setDescription('Género o artista semilla (opcional)')
+        .setRequired(false)
+    ),
   new SlashCommandBuilder().setName('help').setDescription('Muestra ayuda de comandos'),
   new SlashCommandBuilder()
     .setName('playlist_create')

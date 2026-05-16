@@ -182,14 +182,14 @@ function startInternalApi(client, setupCommunityLogic, applySmartRoles, musicMan
   // 5. AutoMod
   app.post('/internal/automod/:guildId', async (req, res) => {
       const guildId = req.params.guildId;
-      const { action, word } = req.body;
+      const { action, word, preset } = req.body;
       
       const guild = client.guilds.cache.get(guildId);
       if (!guild) return res.status(404).json({ error: 'Guild no encontrada' });
       
       try {
           const locale = resolveGuildLocale(guild);
-          const message = await runAction(guild, locale, { type: action, word });
+          const message = await runAction(guild, locale, { type: action, word, preset });
           res.json({ message });
       } catch(err) {
           res.status(400).json({ error: err.message });
