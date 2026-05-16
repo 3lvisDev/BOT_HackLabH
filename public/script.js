@@ -66,6 +66,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function safeHtml(value) {
+        if (typeof escapeHtml === 'function') {
+            return escapeHtml(value);
+        }
+        return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#x27;'
+        }[char]));
+    }
+
     // --- Initialization ---
     checkSession();
 
@@ -159,14 +172,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function showDashboard(user) {
         currentUser = user;
-        document.getElementById('sidebar-bot-avatar').src = user.avatar;
+        
+        // Actualizar UI de usuario de forma segura
+        const avatarImg = document.getElementById('userAvatar');
+        if (avatarImg) avatarImg.src = user.avatar || '';
+        
+        const userNameElem = document.getElementById('userName');
+        if (userNameElem) userNameElem.innerText = user.username || 'Usuario';
+
+        const userTagElem = document.getElementById('userTag');
+        if (userTagElem) userTagElem.innerText = user.id || '';
         
         // Use the CSS state class for a smooth transition
         document.body.classList.add('is-authenticated');
         
         // Pre-revealing clean up
-        loginView.classList.add('hidden');
-        dashView.classList.remove('hidden');
+        if (loginView) loginView.classList.add('hidden');
+        if (dashView) dashView.classList.remove('hidden');
         applyPermissionVisibility(user);
         
         updateStats();
@@ -178,35 +200,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyPermissionVisibility(user) {
         const canManageSecrets = Boolean(user?.canManageSecrets);
-        const envNavItem = document.querySelector('.nav-item[data-screen="env-screen"]');
-        const envScreen = document.getElementById('env-screen');
+        
+        // --- 1. Dueño (Sistema) ---
+        const ownerMenu = document.querySelector('.owner-only-menu');
+        if (ownerMenu) ownerMenu.classList.toggle('hidden', !canManageSecrets);
 
-        if (envNavItem) {
-            envNavItem.classList.toggle('hidden', !canManageSecrets);
-        }
-
-        if (envScreen) {
-            envScreen.classList.toggle('hidden', !canManageSecrets);
-        }
-
-        if (!canManageSecrets && window.location.hash === '#env-screen') {
-            window.location.hash = 'home-screen';
-        }
-
+        // --- 2. Administrador (Servidor) ---
         applyGuildPermissionVisibility();
+
+        // --- 3. Badge visual ---
+        let badge = document.getElementById('proOpsBadge');
+        if (canManageSecrets && !badge) {
+            badge = document.createElement('span');
+            badge.id = 'proOpsBadge';
+            badge.className = 'text-xs font-bold px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded border border-yellow-500/30 ml-2 mt-1 inline-block';
+            badge.innerHTML = '🛡️ Pro Ops';
+            const userInfoDiv = document.querySelector('#userMenu .text-left');
+            if (userInfoDiv) userInfoDiv.appendChild(badge);
+        } else if (!canManageSecrets && badge) {
+            badge.remove();
+        }
+
+        // --- 4. Redirección si no tiene permisos en la pantalla actual ---
+        const hash = window.location.hash.substring(1) || 'my-playlists-screen';
+        if (hash === 'env-screen' && !canManageSecrets) {
+            window.switchScreen('my-playlists-screen');
+        }
     }
 
     function applyGuildPermissionVisibility() {
         currentGuildAccess = availableGuilds.find((g) => g.id === currentGuildId) || null;
         const canManageGuild = Boolean(currentGuildAccess?.userCanManage);
-        const adminScreens = ['users-screen', 'roles-screen', 'welcome-screen', 'achievements-screen'];
+        
+        const adminMenu = document.querySelector('.admin-only-menu');
+        if (adminMenu) adminMenu.classList.toggle('hidden', !canManageGuild);
 
-        adminScreens.forEach((screenId) => {
-            const nav = document.querySelector(`.nav-item[data-screen="${screenId}"]`);
-            const view = document.getElementById(screenId);
-            if (nav) nav.classList.toggle('hidden', !canManageGuild);
-            if (view) view.classList.toggle('hidden', !canManageGuild);
-        });
+        // Si el usuario no tiene permisos en este servidor, ocultamos el switcher o mostramos aviso
+        if (!canManageGuild && !['my-playlists-screen', 'achievements-screen', 'music-screen'].includes(window.location.hash.substring(1))) {
+            window.switchScreen('my-playlists-screen');
+        }
     }
 
     async function loadGuilds() {
@@ -229,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!guildSelector || !guildSwitcher) return;
 
         guildSelector.innerHTML = availableGuilds
-            .map(guild => `<option value="${guild.id}">${guild.name}</option>`)
+            .map(guild => `<option value="${safeHtml(guild.id)}">${safeHtml(guild.name)}</option>`)
             .join('');
 
         if (currentGuildId) {
@@ -422,8 +454,10 @@ document.addEventListener('DOMContentLoaded', () => {
             roleBadge.style.color = r.color;
             roleBadge.textContent = r.name; // Seguro: usa textContent
             
-            const removeBtn = document.createElement('span');
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
             removeBtn.className = 'btn-remove-role';
+            removeBtn.setAttribute('aria-label', `Quitar rol ${r.name}`);
             removeBtn.textContent = '×';
             removeBtn.onclick = () => manageRole(u.id, r.id, 'remove');
             
@@ -432,6 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         const addBtn = document.createElement('button');
+        addBtn.type = 'button';
         addBtn.className = 'btn-add-role';
         addBtn.textContent = '+ Añadir';
         addBtn.onclick = (event) => showRoleAdd(event, u.id);
@@ -442,9 +477,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Celda de acciones
         const actionsCell = document.createElement('td');
         const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
         copyBtn.className = 'btn-action-small';
         copyBtn.textContent = 'Copiar ID';
-        copyBtn.onclick = () => copyId(u.id);
+        copyBtn.onclick = () => copyId(u.id, copyBtn);
         
         actionsCell.appendChild(copyBtn);
         
@@ -482,7 +518,8 @@ document.addEventListener('DOMContentLoaded', () => {
         dropdown.style.left = left + 'px';
 
         available.forEach(r => {
-            const opt = document.createElement('div');
+            const opt = document.createElement('button');
+            opt.type = 'button';
             opt.className = 'role-option';
             // Use role color as a left border indicator for better visibility
             opt.style.borderLeft = `4px solid ${r.color || 'var(--text-muted)'}`;
@@ -495,8 +532,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (available.length === 0) {
-            const opt = document.createElement('div');
+            const opt = document.createElement('button');
+            opt.type = 'button';
             opt.className = 'role-option';
+            opt.disabled = true;
             opt.textContent = "Sin roles extra";
             dropdown.appendChild(opt);
         }
@@ -506,9 +545,9 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => document.addEventListener('click', close), 10);
     };
 
-    window.copyId = (id) => {
+    window.copyId = (id, triggerEl) => {
         navigator.clipboard.writeText(id).then(() => {
-            const btn = event.target;
+            const btn = triggerEl;
             const originalText = btn.textContent;
             btn.textContent = 'Copiado!';
             btn.style.borderColor = '#10b981';
@@ -545,13 +584,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const filtered = allUsers.filter(u => !u.isBot && (u.username.toLowerCase().includes(val) || u.displayName.toLowerCase().includes(val))).slice(0, 5);
             filtered.forEach(u => {
-                const d = document.createElement('div');
+                const d = document.createElement('button');
+                d.type = 'button';
                 d.className = 'user-dropdown-item';
                 
                 // Crear elementos de forma segura
                 const img = document.createElement('img');
                 img.src = sanitizeUrl(u.avatarUrl);
                 img.alt = 'Avatar';
+                img.width = 24;
+                img.height = 24;
                 
                 const span = document.createElement('span');
                 span.textContent = u.displayName; // Seguro: usa textContent
@@ -576,12 +618,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const img = document.createElement('img');
             img.src = sanitizeUrl(u.avatarUrl);
             img.alt = 'Avatar';
+            img.width = 24;
+            img.height = 24;
             
             const nameSpan = document.createElement('span');
             nameSpan.textContent = u.displayName; // Seguro: usa textContent
             
-            const removeSpan = document.createElement('span');
-            removeSpan.style.cursor = 'pointer';
+            const removeSpan = document.createElement('button');
+            removeSpan.type = 'button';
+            removeSpan.className = 'btn-remove-chip';
+            removeSpan.setAttribute('aria-label', `Quitar ${u.displayName}`);
             removeSpan.textContent = '×';
             removeSpan.onclick = () => {
                 chip.remove();
@@ -600,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else selectedMods = selectedMods.filter(u => u.id !== uid);
     };
 
-    setupBtn.addEventListener('click', async () => {
+    setupBtn?.addEventListener('click', async () => {
         if (!confirm('¿Ejecutar configuración avanzada?')) return;
         setupBtn.disabled = true;
         logContent.innerHTML = '⚙️ Iniciando migración...\n';
@@ -628,7 +674,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setupBtn.disabled = false;
     });
 
-    restartBtn.addEventListener('click', async () => {
+    restartBtn?.addEventListener('click', async () => {
         if (confirm('¿Reiniciar bot?')) {
             fetch('/api/restart', { method: 'POST' });
             reconnectOverlay.classList.remove('hidden');
@@ -638,7 +684,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    logoutBtn.addEventListener('click', () => {
+    logoutBtn?.addEventListener('click', () => {
         logoutBtn.disabled = true;
         logoutBtn.textContent = 'Cerrando sesión…';
         fetch('/api/logout', { method: 'POST' }).then(() => window.location.reload());
@@ -667,6 +713,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    document.getElementById('go-achievements-btn')?.addEventListener('click', () => {
+        window.switchScreen('achievements-screen');
+    });
+
     // Mobile Navigation (Close on click)
     if (window.innerWidth < 768) {
         navItems.forEach(item => {
@@ -687,9 +737,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const goodbyeSelect = document.getElementById('goodbye-channel');
                 
                 // Los canales ya vienen filtrados por tipo 0 desde el backend
-                const options = channels.map(c => `<option value="${c.id}"># ${c.name}</option>`).join('');
-                welcomeSelect.innerHTML = `<option value="">Selecciona un canal...</option>` + options;
-                goodbyeSelect.innerHTML = `<option value="">Selecciona un canal...</option>` + options;
+                const options = channels.map(c => `<option value="${safeHtml(c.id)}"># ${safeHtml(c.name)}</option>`).join('');
+                welcomeSelect.innerHTML = `<option value="">Selecciona un canal?</option>` + options;
+                goodbyeSelect.innerHTML = `<option value="">Selecciona un canal?</option>` + options;
             }
 
             // 2. Cargar configuración actual (con timeout para asegurar que el DOM cargó los options)
@@ -697,13 +747,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 const resSettings = await fetch('/api/settings/welcome');
                 if (resSettings.ok) {
                     const data = await resSettings.json();
-                    document.getElementById('welcome-toggle').checked = data.welcome_enabled;
-                    document.getElementById('welcome-channel').value = data.welcome_channel || '';
-                    document.getElementById('welcome-msg').value = data.welcome_message;
-                    
-                    document.getElementById('goodbye-toggle').checked = data.goodbye_enabled;
-                    document.getElementById('goodbye-channel').value = data.goodbye_channel || '';
-                    document.getElementById('goodbye-msg').value = data.goodbye_message;
+                    const welcomeToggle = document.getElementById('welcome-toggle');
+                    const welcomeChannel = document.getElementById('welcome-channel');
+                    const welcomeMsg = document.getElementById('welcome-msg');
+                    const goodbyeToggle = document.getElementById('goodbye-toggle');
+                    const goodbyeChannel = document.getElementById('goodbye-channel');
+                    const goodbyeMsg = document.getElementById('goodbye-msg');
+
+                    if (welcomeToggle) welcomeToggle.checked = Boolean(data.welcome_enabled);
+                    if (welcomeChannel) welcomeChannel.value = data.welcome_channel || '';
+                    if (welcomeMsg) welcomeMsg.value = data.welcome_message || '';
+                    if (goodbyeToggle) goodbyeToggle.checked = Boolean(data.goodbye_enabled);
+                    if (goodbyeChannel) goodbyeChannel.value = data.goodbye_channel || '';
+                    if (goodbyeMsg) goodbyeMsg.value = data.goodbye_message || '';
                 }
             }, 100);
         } catch (err) { console.error("Error al cargar configuración", err); }
@@ -732,13 +788,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 grid.innerHTML = all.map(a => `
                     <div class="achievement-badge ${earnedIds.has(a.id) ? 'unlocked' : 'locked'}">
-                        <div class="badge-icon-wrapper">
-                            ${a.icon || '🏆'}
+                        <div class="badge-icon-wrapper" aria-hidden="true">
+                            ${safeHtml(a.icon || '??')}
                         </div>
-                        <span class="badge-name">${a.name}</span>
-                        <span class="badge-desc">${a.description}</span>
+                        <span class="badge-name">${safeHtml(a.name)}</span>
+                        <span class="badge-desc">${safeHtml(a.description)}</span>
                     </div>
-                `).join('') || '<p>No hay logros configurados aún.</p>';
+                `).join('') || '<p>No hay logros configurados a?n.</p>';
             }
         } catch (err) { 
             grid.innerHTML = '<p>Error cargando logros.</p>';
@@ -791,6 +847,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (input.type === 'password') input.type = 'text';
         else input.type = 'password';
     };
+
+    document.querySelectorAll('.btn-toggle-secret').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-target');
+            if (target) window.toggleSecret(target);
+        });
+    });
 
     document.getElementById('save-env-btn')?.addEventListener('click', async () => {
         const payload = {};
@@ -986,7 +1049,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const select = document.getElementById('spotify-account-playlist-select');
         const statusLabel = document.getElementById('spotify-account-status');
         if (!select) return;
-        select.innerHTML = '<option value="">Cargando playlists...</option>';
+        select.innerHTML = '<option value="">Cargando playlists?</option>';
         try {
             const res = await fetch('/api/spotify/playlists');
             const data = await res.json();
@@ -998,7 +1061,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             select.innerHTML = '<option value="">Selecciona una playlist de Spotify</option>' +
-                playlists.map((p) => `<option value="${p.id}">${p.name} (${p.tracks} tracks)</option>`).join('');
+                playlists.map((p) => `<option value="${safeHtml(p.id)}">${safeHtml(p.name)} (${safeHtml(p.tracks)} tracks)</option>`).join('');
             if (statusLabel) statusLabel.textContent = `Se cargaron ${playlists.length} playlists de Spotify.`;
         } catch (err) {
             select.innerHTML = '<option value="">Spotify no disponible</option>';
@@ -1006,13 +1069,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function automodAction(action, word = '') {
+    async function automodAction(action, word = '', preset = '') {
         const output = document.getElementById('automod-console');
         try {
             const res = await fetch('/api/automod/action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action, word })
+                body: JSON.stringify({ action, word, preset })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Error en AutoMod');
@@ -1172,6 +1235,125 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!word) return alert('Escribe una palabra para AutoMod.');
         automodAction('remove', word);
     });
+    document.getElementById('automod-preset-relaxed-btn')?.addEventListener('click', () => automodAction('preset', '', 'relaxed'));
+    document.getElementById('automod-preset-balanced-btn')?.addEventListener('click', () => automodAction('preset', '', 'balanced'));
+    document.getElementById('automod-preset-strict-btn')?.addEventListener('click', () => automodAction('preset', '', 'strict'));
+
+    // --- Personal Playlists Logic ---
+    let myCurrentPlaylist = null;
+
+    async function loadMyPlaylists() {
+        const listDiv = document.getElementById('my-playlist-list');
+        if (!listDiv) return;
+        try {
+            const res = await fetch('/api/my/playlists');
+            const playlists = await res.json();
+            
+            // Fix: ensure playlists is an array before mapping
+            if (!Array.isArray(playlists)) {
+                listDiv.innerHTML = '<p class="p-4 text-sm opacity-50">No se pudieron cargar las listas.</p>';
+                return;
+            }
+
+            listDiv.innerHTML = playlists.map(p => `
+                <button type="button" class="playlist-item ${myCurrentPlaylist === p.name ? 'active' : ''}" data-playlist-name="${safeHtml(p.name)}">
+                    <span class="playlist-name">${safeHtml(p.name)}</span>
+                    <span class="playlist-count">${safeHtml(p.item_count)}</span>
+                </button>
+            `).join('') || '<p class="p-4 text-sm opacity-50">No tienes listas privadas.</p>';
+
+            listDiv.querySelectorAll('[data-playlist-name]').forEach((button) => {
+                button.addEventListener('click', () => window.showMyPlaylist(button.dataset.playlistName));
+            });
+        } catch (err) { console.error(err); }
+    }
+
+    window.showMyPlaylist = async (name) => {
+        myCurrentPlaylist = name;
+        document.getElementById('my-playlist-empty')?.classList.add('hidden');
+        document.getElementById('my-playlist-detail')?.classList.remove('hidden');
+        const currentPlaylistName = document.getElementById('my-current-playlist-name');
+        if (currentPlaylistName) currentPlaylistName.textContent = name;
+        
+        await loadMyPlaylists(); // Refresh active state
+        await renderMyPlaylistTracks(name);
+    };
+
+    async function renderMyPlaylistTracks(name) {
+        const tbody = document.getElementById('my-playlist-tracks');
+        try {
+            const res = await fetch(`/api/my/playlists/${encodeURIComponent(name)}`);
+            const { items } = await res.json();
+            tbody.innerHTML = items.map(i => `
+                <tr>
+                    <td>${safeHtml(i.position)}</td>
+                    <td>${safeHtml(i.query)}</td>
+                    <td>
+                        <button type="button" class="btn-mini-danger" data-remove-playlist="${safeHtml(name)}" data-remove-position="${safeHtml(i.position)}">Eliminar</button>
+                    </td>
+                </tr>
+            `).join('') || '<tr><td colspan="3" class="text-center">Esta lista est? vac?a.</td></tr>';
+
+            tbody.querySelectorAll('[data-remove-playlist]').forEach((button) => {
+                button.addEventListener('click', () => window.removeMyTrack(button.dataset.removePlaylist, Number(button.dataset.removePosition)));
+            });
+        } catch (err) { console.error(err); }
+    }
+
+    document.getElementById('btn-create-my-playlist')?.addEventListener('click', async () => {
+        const name = prompt('Nombre de tu nueva playlist privada:');
+        if (!name) return;
+        const res = await fetch('/api/my/playlists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (res.ok) {
+            await loadMyPlaylists();
+            window.showMyPlaylist(name);
+        } else {
+            const data = await res.json();
+            alert(data.error || 'No se pudo crear.');
+        }
+    });
+
+    document.getElementById('btn-delete-my-playlist')?.addEventListener('click', async () => {
+        if (!myCurrentPlaylist || !confirm(`¿Borrar la playlist "${myCurrentPlaylist}"?`)) return;
+        const res = await fetch(`/api/my/playlists/${encodeURIComponent(myCurrentPlaylist)}`, { method: 'DELETE' });
+        if (res.ok) {
+            myCurrentPlaylist = null;
+            document.getElementById('my-playlist-detail').classList.add('hidden');
+            document.getElementById('my-playlist-empty').classList.remove('hidden');
+            await loadMyPlaylists();
+        }
+    });
+
+    document.getElementById('btn-add-my-track')?.addEventListener('click', async () => {
+        const query = document.getElementById('my-new-track-query')?.value?.trim();
+        if (!query || !myCurrentPlaylist) return;
+        const res = await fetch(`/api/my/playlists/${encodeURIComponent(myCurrentPlaylist)}/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        });
+        if (res.ok) {
+            document.getElementById('my-new-track-query').value = '';
+            await renderMyPlaylistTracks(myCurrentPlaylist);
+            await loadMyPlaylists();
+        }
+    });
+
+    window.removeMyTrack = async (name, position) => {
+        if (!confirm('¿Quitar canción?')) return;
+        const res = await fetch(`/api/my/playlists/${encodeURIComponent(name)}/items/${position}`, { method: 'DELETE' });
+        if (res.ok) {
+            await renderMyPlaylistTracks(name);
+            await loadMyPlaylists();
+        }
+    };
+
+    // Initial load for personal stuff
+    loadMyPlaylists();
 
     console.log('Dashboard initialized successfully');
     window.addEventListener('resize', () => {

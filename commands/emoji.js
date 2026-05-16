@@ -177,14 +177,67 @@ async function handleEmojiCommand(message) {
     return true;
   }
 
+  if (action === 'uploadpack') {
+    const profile = (rest[0] || '').trim();
+    if (!profile) {
+      await message.reply('Uso: `!emoji uploadpack <perfil>` (ej: `!emoji uploadpack fun`)');
+      return true;
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const packDir = path.join(__dirname, '..', 'assets', 'emojis', `${profile}_pack`);
+    
+    if (!fs.existsSync(packDir)) {
+      await message.reply(`La carpeta del pack no existe: \`${profile}_pack\`\nAsegúrate de descargarla primero.`);
+      return true;
+    }
+
+    const files = fs.readdirSync(packDir).filter(f => ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif'].some(ext => f.toLowerCase().endsWith(ext)));
+    if (files.length === 0) {
+      await message.reply('No se encontraron imágenes en el pack.');
+      return true;
+    }
+
+    const statusMsg = await message.reply(`Encontrados **${files.length}** emojis en el pack '${profile}'.\nComenzando subida global a la Aplicación (App Emojis)...`);
+    
+    let success = 0;
+    let failed = 0;
+
+    for (const file of files) {
+      try {
+        const filePath = path.join(packDir, file);
+        const name = file.replace(/\.[^/.]+$/, "");
+        
+        await message.client.application.emojis.create({
+          attachment: filePath,
+          name: name
+        });
+        success++;
+        // Retraso para evitar rate limits fuertes de Discord
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        if (success % 10 === 0) {
+          await statusMsg.edit(`Subiendo pack '${profile}'... Progreso: ${success}/${files.length}`);
+        }
+      } catch (err) {
+        failed++;
+        console.error(`Failed to upload ${file}:`, err);
+      }
+    }
+
+    await statusMsg.edit(`✅ Subida de pack '${profile}' completada.\nÉxito: **${success}** | Fallidos: **${failed}**`);
+    return true;
+  }
+
   await message.reply(
     'Comandos emoji:\n' +
     '`!emoji add <nombre> <url-imagen>`\n' +
     '`!emoji addfile <nombre>` (adjunta imagen)\n' +
     '`!emoji delete <nombre>`\n' +
-    '`!emoji list`\n' +
-    '`!emoji app_list`\n' +
-    '`!emoji use <nombre> [fallback]`'
+    '`!emoji list` / `!emoji app_list`\n' +
+    '`!emoji use <nombre> [fallback]`\n' +
+    '`!emoji uploadpack <perfil>` (Batch upload)'
   );
   return true;
 }

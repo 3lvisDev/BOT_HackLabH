@@ -3,15 +3,22 @@
   "version": "1.1.0",
   "description": "Discord bot for programming community administration.",
   "main": "index.js",
+  "engines": {
+    "node": ">=18 <=22"
+  },
   "scripts": {
     "start": "node index.js",
+    "lint": "node scripts/quality/lint-syntax.js",
+    "typecheck": "node scripts/quality/typecheck-i18n.js",
     "test": "node tests/run-tests.js",
+    "test:integration": "node tests/integration/music-memory.integration.js",
+    "build": "node scripts/quality/build-check.js",
     "test:bug": "node tests/bugfix-welcome-goodbye.test.js",
     "test:preservation": "node tests/preservation.test.js",
     "deploy:commands": "node scripts/deploy-commands.js",
     "agent:bootstrap": "powershell -ExecutionPolicy Bypass -File scripts/setup-agent-stack.ps1",
-    "emoji:pack": "python scripts/download_emoji_pack.py",
-    "emoji:fun": "python scripts/download_emoji_pack.py --profile fun --out assets/emojis/fun_pack --commands-file assets/emojis/upload_commands_fun.txt --clean-out"
+    "emoji:pack": "python3 scripts/download_emoji_pack.py",
+    "emoji:fun": "python3 scripts/download_emoji_pack.py --profile fun --out assets/emojis/fun_pack --commands-file assets/emojis/upload_commands_fun.txt --clean-out"
   },
   "dependencies": {
     "@discordjs/opus": "^0.9.0",
@@ -38,7 +45,9 @@
     "tweetnacl": "^1.0.3",
     "ws": "^8.16.0",
     "youtube-dl-exec": "^3.0.10",
-    "youtube-sr": "^4.3.12"
+    "youtube-sr": "^4.3.12",
+    "isomorphic-unfetch": "^4.0.2",
+    "spotify-url-info": "^3.2.14"
   },
   "devDependencies": {
     "fast-check": "^3.15.0",

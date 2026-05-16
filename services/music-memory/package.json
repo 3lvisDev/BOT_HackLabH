@@ -1,0 +1,13 @@
+﻿{
+  "name": "hacklabh-music-memory",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7",
+    "sqlite": "^5.1.1"
+  }
+}

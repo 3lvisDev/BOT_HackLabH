@@ -1,4 +1,4 @@
-﻿const { ActivityType } = require('discord.js');
+const { ActivityType } = require('discord.js');
 
 function formatGuildCount(count = 0) {
   const safe = Number.isFinite(count) ? count : 0;
@@ -12,9 +12,10 @@ function applyBotPresence(client, status = {}) {
   const active = Boolean(status.active);
   const track = status.currentTrack ? String(status.currentTrack).slice(0, 96) : null;
 
-  const activity = active && track
-    ? { type: ActivityType.Listening, name: track }
-    : { type: ActivityType.Playing, name: `On ${formatGuildCount(guildCount)} Guilds` };
+  const activity = { 
+    type: ActivityType.Watching, 
+    name: `${formatGuildCount(guildCount)} servidores` 
+  };
 
   try {
     client.user.setPresence({

@@ -1,0 +1,82 @@
+version: "3.8"
+
+# ═══════════════════════════════════════════════════════════════
+# HackLabH Bot — Docker Compose para Raspberry Pi (ARM64)
+# ═══════════════════════════════════════════════════════════════
+# Puertos ya ocupados en la Pi (NO usar):
+#   22    → SSH
+#   53    → DNS
+#   80    → Nginx (HTTP)
+#   443   → Nginx (HTTPS/SSL)
+#   631   → CUPS
+#   1935  → RTMP
+#   3000  → PleyTV Frontend (PM2)
+#   3306  → MySQL
+#   5000  → PleyTV Backend (PM2)
+#   8080  → Reverse proxy
+#   8888  → Apexcode FiveStore
+#
+# Puertos que usamos (libres ✅):
+#   2333  → Lavalink (audio server)
+#   9445  → HackLabBot Dashboard
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ──────────────────────────────────────────────
+  # HackLabH Bot — Discord Bot + Web Dashboard
+  # ──────────────────────────────────────────────
+  hacklabh-bot:
+    container_name: hacklabh-bot
+    build:
+      context: .
+      dockerfile: Dockerfile.pi
+    restart: unless-stopped
+    ports:
+      - "9445:9445"
+    env_file:
+      - .env
+    environment:
+      - PORT=9445
+      - LAVALINK_URL=lavalink:2333
+      - LAVALINK_PASSWORD=youshallnotpass
+      - LAVALINK_SECURE=false
+      - NODE_ENV=production
+    volumes:
+      - ./bot_data.sqlite:/usr/src/app/bot_data.sqlite
+    depends_on:
+      lavalink:
+        condition: service_healthy
+    networks:
+      - hacklab-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:9445/', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+  # ──────────────────────────────────────────────
+  # Lavalink — Audio Server for Discord Music
+  # ──────────────────────────────────────────────
+  lavalink:
+    container_name: hacklabh-lavalink
+    image: ghcr.io/lavalink-devs/lavalink:4
+    restart: unless-stopped
+    ports:
+      - "2333:2333"
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+    environment:
+      - _JAVA_OPTIONS=-Xmx256m
+    networks:
+      - hacklab-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --header='Authorization: youshallnotpass' -O /dev/null http://localhost:2333/version || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  hacklab-net:
+    driver: bridge

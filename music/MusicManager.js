@@ -5,6 +5,7 @@ const { applyBotPresence } = require('../utils/botProfile');
 const db = require('../db');
 const axios = require('axios');
 const { isSpotifyLink, resolveSpotifyQueries } = require('./spotify');
+const { trackPlayEvent } = require('../utils/musicMemoryClient');
 
 class MusicManager {
     constructor(client) {
@@ -16,6 +17,8 @@ class MusicManager {
         this.djAutoInterval = null;
         this.playbackSnapshotInterval = null;
         this.restoreInProgress = new Set();
+        this.idleTimeouts = new Map();
+        this.pendingRadioPrefetch = new Map();
         this.nodeReady = false;
 
         if (!this.hasLavalinkConfig) {
@@ -71,6 +74,9 @@ class MusicManager {
                 channelId: player.voiceId,
                 guildId: player.guildId
             });
+            this.maybePrefetchRadioTrack(player).catch((error) => {
+                console.error('[MusicManager] Error en prefetch de radio:', error.message);
+            });
         });
 
         this.kazagumo.on('playerError', (player, error) => {
@@ -97,6 +103,43 @@ class MusicManager {
         this.startPlaybackSnapshotWatcher();
     }
 
+    async handleVoiceStateUpdate(oldState, newState) {
+        const guildId = newState.guild.id;
+        const player = this.kazagumo?.players.get(guildId);
+        
+        if (!player) return;
+
+        const botVoiceChannelId = player.voiceId;
+        if (!botVoiceChannelId) return;
+
+        const voiceChannel = newState.guild.channels.cache.get(botVoiceChannelId);
+        if (!voiceChannel) return;
+
+        // Count non-bot members in the channel
+        const nonBotMembers = voiceChannel.members.filter(m => !m.user.bot).size;
+
+        if (nonBotMembers === 0) {
+            // Bot is alone, start timeout if not already started
+            if (!this.idleTimeouts.has(guildId)) {
+                console.log(`[MusicManager] Bot solo en ${guildId}. Iniciando cuenta regresiva de 30s.`);
+                const timeout = setTimeout(async () => {
+                    console.log(`[MusicManager] Canal vacio en ${guildId}. Desconectando por inactividad.`);
+                    logMusicEvent(guildId, 'info', 'Desconectado automáticamente: El canal de voz está vacío.');
+                    await this.stop(guildId);
+                    this.idleTimeouts.delete(guildId);
+                }, 30000); // 30 seconds
+                this.idleTimeouts.set(guildId, timeout);
+            }
+        } else {
+            // Someone is in the channel, clear timeout if exists
+            if (this.idleTimeouts.has(guildId)) {
+                console.log(`[MusicManager] Usuario detectado en ${guildId}. Cancelando auto-desconexión.`);
+                clearTimeout(this.idleTimeouts.get(guildId));
+                this.idleTimeouts.delete(guildId);
+            }
+        }
+    }
+
     getRadioState(guildId) {
         if (!this.radioState.has(guildId)) {
             this.radioState.set(guildId, {
@@ -104,6 +147,8 @@ class MusicManager {
                 genreSeed: null,
                 recentIdentifiers: [],
                 recentFingerprints: [],
+                recentTitleKeys: [],
+                recentArtists: [],
                 lastTrack: null
             });
         }
@@ -125,8 +170,85 @@ class MusicManager {
 
     async setRadioGenre(guildId, genre) {
         const state = this.getRadioState(guildId);
+        const previousGenre = this.normalizeText(state.genreSeed);
         state.genreSeed = genre ? String(genre).trim() : null;
+        const nextGenre = this.normalizeText(state.genreSeed);
+        if (previousGenre !== nextGenre) {
+            this.resetRadioAlgorithm(guildId, { preserveGenre: true });
+        }
         await db.updateMusicSettings(guildId, { radio_genre: state.genreSeed });
+        return { enabled: state.enabled, genre: state.genreSeed };
+    }
+
+    isDirectUrlQuery(query) {
+        const raw = String(query || '').trim();
+        if (!raw) return false;
+        return /^https?:\/\//i.test(raw) || /^www\./i.test(raw);
+    }
+
+    async syncRadioSeedFromPlayQuery(guildId, query) {
+        const raw = String(query || '').trim();
+        if (!raw) return;
+        if (this.isDirectUrlQuery(raw)) return;
+        if (isSpotifyLink(raw)) return;
+
+        await this.setRadioGenre(guildId, raw);
+        await this.setRadioMode(guildId, true);
+    }
+
+    extractSeedFromTrack(track) {
+        const author = String(track?.author || '').trim();
+        if (!author) return null;
+        return author.split(/,|&| feat\.| ft\.| x /i)[0].trim() || null;
+    }
+
+    looksLikeSpecificSongQuery(query) {
+        const raw = String(query || '').trim();
+        if (!raw) return false;
+        const words = raw.split(/\s+/).filter(Boolean);
+        return words.length >= 4;
+    }
+
+    async learnAndApplyUserSeed(guildId, requesterId, originalQuery, firstTrack) {
+        if (!guildId || !requesterId) return;
+        let seed = null;
+        const raw = String(originalQuery || '').trim();
+
+        if (this.isDirectUrlQuery(raw) || isSpotifyLink(raw) || this.looksLikeSpecificSongQuery(raw)) {
+            seed = this.extractSeedFromTrack(firstTrack);
+            if (!seed) {
+                const top = await db.getUserTopMusicPreference(guildId, requesterId);
+                seed = top?.seed || null;
+            }
+        } else {
+            seed = raw;
+        }
+
+        if (!seed) return;
+        await db.recordUserMusicPreference(guildId, requesterId, seed);
+        await this.setRadioGenre(guildId, seed);
+        await this.setRadioMode(guildId, true);
+        await trackPlayEvent({
+            guild_id: guildId,
+            user_id: requesterId,
+            query: String(originalQuery || '').trim() || null,
+            track_title: firstTrack?.title || null,
+            artist: firstTrack?.author || null,
+            seed,
+            source: 'bot-play'
+        });
+    }
+
+    resetRadioAlgorithm(guildId, { preserveGenre = true } = {}) {
+        const state = this.getRadioState(guildId);
+        state.recentIdentifiers = [];
+        state.recentFingerprints = [];
+        state.recentTitleKeys = [];
+        state.recentArtists = [];
+        state.lastTrack = null;
+        if (!preserveGenre) {
+            state.genreSeed = null;
+        }
         return { enabled: state.enabled, genre: state.genreSeed };
     }
 
@@ -148,6 +270,14 @@ class MusicManager {
         if (fingerprint) {
             state.recentFingerprints = [fingerprint, ...state.recentFingerprints.filter((fp) => fp !== fingerprint)].slice(0, 20);
         }
+        const artist = this.normalizeText(track.author);
+        const titleKey = this.buildTitleKey(track?.title);
+        if (artist) {
+            state.recentArtists = [artist, ...state.recentArtists.filter((name) => name !== artist)].slice(0, 25);
+        }
+        if (titleKey) {
+            state.recentTitleKeys = [titleKey, ...state.recentTitleKeys.filter((name) => name !== titleKey)].slice(0, 30);
+        }
     }
 
     normalizeText(text) {
@@ -168,6 +298,69 @@ class MusicManager {
         const author = this.normalizeText(track?.author);
         const base = `${author}|${title}`.trim();
         return base || null;
+    }
+
+    buildTitleKey(title) {
+        return this.normalizeText(title)
+            .replace(/\b(official|video|lyric|lyrics|audio|visualizer|mv|hd|4k|remaster|live|en vivo|mix|full|version|feat|ft)\b/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    extractGenreTokens(seed) {
+        const stopwords = new Set(['mix', 'music', 'musica', 'songs', 'song', 'playlist', 'radio', 'top', 'hits', 'best', 'de', 'del', 'la', 'el']);
+        return this.normalizeText(seed)
+            .split(' ')
+            .map((token) => token.trim())
+            .filter((token) => token.length >= 3 && !stopwords.has(token));
+    }
+
+    hasGenreAffinity(track, genreSeed) {
+        const tokens = this.extractGenreTokens(genreSeed);
+        if (!tokens.length) return true;
+        const haystack = `${this.normalizeText(track?.title)} ${this.normalizeText(track?.author)}`;
+        return tokens.some((token) => haystack.includes(token));
+    }
+
+    isArtistOverused(guildId, artist, limit = 4) {
+        if (!artist) return false;
+        const state = this.getRadioState(guildId);
+        return state.recentArtists.slice(0, limit).includes(artist);
+    }
+
+    scoreRadioCandidate(guildId, track) {
+        const state = this.getRadioState(guildId);
+        const fingerprint = this.buildTrackFingerprint(track);
+        const artist = this.normalizeText(track?.author);
+        const sameId = Boolean(track.identifier) && state.recentIdentifiers.includes(track.identifier);
+        const sameFingerprint = Boolean(fingerprint) && state.recentFingerprints.includes(fingerprint);
+        const repeatedArtist = Boolean(artist) && state.recentArtists.slice(0, 5).includes(artist);
+        const titleKey = this.buildTitleKey(track?.title);
+        const repeatedTitle = Boolean(titleKey) && state.recentTitleKeys.slice(0, 12).includes(titleKey);
+        const normalizedTitle = this.normalizeText(track?.title);
+        const lowQualityHint = /(live|karaoke|8d|nightcore|slowed|reverb)/.test(normalizedTitle);
+        const genreMismatch = Boolean(state.genreSeed) && !this.hasGenreAffinity(track, state.genreSeed);
+
+        if (sameId || sameFingerprint) {
+            return Number.NEGATIVE_INFINITY;
+        }
+        if (state.lastTrack?.title && titleKey && this.buildTitleKey(state.lastTrack.title) === titleKey) {
+            return Number.NEGATIVE_INFINITY;
+        }
+        if (genreMismatch && state.genreSeed) {
+            return Number.NEGATIVE_INFINITY;
+        }
+        if (this.isArtistOverused(guildId, artist, 3)) {
+            return Number.NEGATIVE_INFINITY;
+        }
+
+        let score = 100;
+        if (repeatedArtist) score -= 55;
+        if (repeatedTitle) score -= 55;
+        if (lowQualityHint) score -= 8;
+        if (track?.isStream) score -= 10;
+        if (track?.length && track.length > 0 && track.length < 90_000) score -= 6;
+        return score;
     }
 
     setLiveStream(guildId, streamUrl) {
@@ -323,30 +516,78 @@ class MusicManager {
         return 'top global hits mix';
     }
 
-    async findRelatedTrack(guildId) {
-        const query = this.buildRadioQuery(guildId);
-        if (!query) return null;
-
-        const result = await this.kazagumo.search(query);
+    buildRadioQueries(guildId) {
         const state = this.getRadioState(guildId);
-        let candidate = result.tracks.find((track) => {
-            const fingerprint = this.buildTrackFingerprint(track);
-            const sameId = Boolean(track.identifier) && state.recentIdentifiers.includes(track.identifier);
-            const sameFingerprint = Boolean(fingerprint) && state.recentFingerprints.includes(fingerprint);
-            return !sameId && !sameFingerprint;
-        }) || null;
+        if (state.genreSeed) {
+            return [
+                `${state.genreSeed} mix`,
+                `${state.genreSeed} playlist`,
+                `${state.genreSeed} music`
+            ];
+        }
+        return [this.buildRadioQuery(guildId)];
+    }
+
+    async findRelatedTrack(guildId) {
+        const queries = this.buildRadioQueries(guildId);
+        if (!queries.length) return null;
+        const state = this.getRadioState(guildId);
+        const pickBest = (tracks = []) => {
+            const ranked = tracks
+                .map((track) => ({ track, score: this.scoreRadioCandidate(guildId, track) }))
+                .filter((item) => Number.isFinite(item.score))
+                .sort((a, b) => b.score - a.score);
+            if (!ranked.length) return null;
+
+            if (state.genreSeed) {
+                const firstMatchingGenre = ranked.find((item) => this.hasGenreAffinity(item.track, state.genreSeed));
+                if (firstMatchingGenre) return firstMatchingGenre.track;
+            }
+
+            return ranked[0]?.track || null;
+        };
+
+        let candidate = null;
+        const pooledTracks = [];
+        for (const query of queries) {
+            const result = await this.kazagumo.search(query);
+            pooledTracks.push(...(result.tracks || []));
+            candidate = pickBest(result.tracks);
+            if (candidate) break;
+        }
+
+        if (!candidate && pooledTracks.length) {
+            candidate = pickBest(pooledTracks);
+        }
 
         if (!candidate && state.genreSeed) {
             const fallback = await this.kazagumo.search(`${state.genreSeed} radio mix`);
-            candidate = fallback.tracks.find((track) => {
-                const fingerprint = this.buildTrackFingerprint(track);
-                const sameId = Boolean(track.identifier) && state.recentIdentifiers.includes(track.identifier);
-                const sameFingerprint = Boolean(fingerprint) && state.recentFingerprints.includes(fingerprint);
-                return !sameId && !sameFingerprint;
-            }) || null;
+            candidate = pickBest(fallback.tracks);
         }
 
         return candidate;
+    }
+
+    async maybePrefetchRadioTrack(player) {
+        if (!player?.guildId || !player?.queue) return;
+        const guildId = player.guildId;
+        const state = this.getRadioState(guildId);
+        if (!state.enabled) return;
+        if (this.getLiveStream(guildId)) return;
+        if (this.pendingRadioPrefetch.has(guildId)) return;
+        if (player.queue.size > 1) return;
+
+        const prefetchPromise = (async () => {
+            const nextTrack = await this.findRelatedTrack(guildId);
+            if (!nextTrack) return;
+            player.queue.add(nextTrack);
+            logMusicEvent(guildId, 'info', `Modo radio: prefetch ${nextTrack.title}`);
+        })().finally(() => {
+            this.pendingRadioPrefetch.delete(guildId);
+        });
+
+        this.pendingRadioPrefetch.set(guildId, prefetchPromise);
+        await prefetchPromise;
     }
 
     async handlePlayerEmpty(player) {
@@ -515,11 +756,11 @@ class MusicManager {
         }
     }
 
-    async play(guildId, voiceChannelId, query) {
-        return this.playInternal(guildId, voiceChannelId, query, true);
+    async play(guildId, voiceChannelId, query, options = {}) {
+        return this.playInternal(guildId, voiceChannelId, query, true, options);
     }
 
-    async playInternal(guildId, voiceChannelId, query, allowRetry) {
+    async playInternal(guildId, voiceChannelId, query, allowRetry, options = {}) {
         if (!this.hasLavalinkConfig) {
             throw new Error('Falta configurar LAVALINK_URL y LAVALINK_PASSWORD en el archivo .env');
         }
@@ -551,10 +792,12 @@ class MusicManager {
         } catch (error) {
             if (allowRetry && this.isNoNodeError(error)) {
                 await this.waitForNodeConnection(8000);
-                return this.playInternal(guildId, voiceChannelId, query, false);
+                return this.playInternal(guildId, voiceChannelId, query, false, options);
             }
             throw error;
         }
+
+        await this.syncRadioSeedFromPlayQuery(guildId, query);
 
         let resolvedQueries;
         try {
@@ -562,11 +805,12 @@ class MusicManager {
         } catch (error) {
             if (allowRetry && this.isNoNodeError(error)) {
                 await this.waitForNodeConnection(8000);
-                return this.playInternal(guildId, voiceChannelId, query, false);
+                return this.playInternal(guildId, voiceChannelId, query, false, options);
             }
             throw error;
         }
         let firstTrackTitle = null;
+        let firstResolvedTrack = null;
 
         for (const playableQuery of resolvedQueries) {
             let result;
@@ -575,7 +819,7 @@ class MusicManager {
             } catch (error) {
                 if (allowRetry && this.isNoNodeError(error)) {
                     await this.waitForNodeConnection(8000);
-                    return this.playInternal(guildId, voiceChannelId, query, false);
+                    return this.playInternal(guildId, voiceChannelId, query, false, options);
                 }
                 throw error;
             }
@@ -583,6 +827,7 @@ class MusicManager {
 
             if (!firstTrackTitle) {
                 firstTrackTitle = result.tracks[0].title;
+                firstResolvedTrack = result.tracks[0];
             }
 
             if (result.type === 'PLAYLIST') {
@@ -596,6 +841,10 @@ class MusicManager {
 
         if (!firstTrackTitle) {
             throw new Error('No se encontraron resultados para tu busqueda.');
+        }
+
+        if (options.requesterId && firstResolvedTrack) {
+            await this.learnAndApplyUserSeed(guildId, options.requesterId, query, firstResolvedTrack);
         }
 
         this.clearLiveStream(guildId);

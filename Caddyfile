@@ -1,0 +1,8 @@
+﻿panel.hacklabh.xyz {
+    reverse_proxy hacklabh-bot:9445
+}
+
+www.hacklabh.xyz, hacklabh.xyz {
+    root * /srv
+    file_server
+}

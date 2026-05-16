@@ -50,10 +50,10 @@ const createMockGuild = (name = 'Test Server', memberCount = 100) => ({
   }
 });
 
-const createMockMember = (isBot = false, guildName = 'Test Server', memberCount = 100) => ({
-  id: fc.sample(memberIdGenerator, 1)[0],
+const createMockMember = (isBot = false, guildName = 'Test Server', memberCount = 100, memberId = 'user123') => ({
+  id: memberId,
   user: {
-    id: fc.sample(memberIdGenerator, 1)[0],
+    id: memberId,
     bot: isBot,
     tag: `TestUser#${fc.sample(fc.integer({ min: 1000, max: 9999 }), 1)[0]}`
   },
@@ -1063,11 +1063,12 @@ describe('Preservation Property 10: Role assignment logic preserved', () => {
             targetRolesList = Array(scenario.currentRoleCount).fill('role');
           }
           
-          // Verificar que la lógica se aplicó
-          const hasBaseRole = targetRolesList.includes('base_role') || 
-                             targetRolesList.includes('role');
-          
-          return hasBaseRole;
+          // Verificar que la l?gica se aplic? sin exigir rol base a perfiles elevados
+          if (!scenario.isAdmin && !scenario.isOwner && !scenario.isMod) {
+            return targetRolesList.includes('base_role');
+          }
+
+          return targetRolesList.length === scenario.currentRoleCount;
         }
       ),
       { numRuns: 100 }

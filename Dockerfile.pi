@@ -1,0 +1,36 @@
+FROM node:18-slim
+
+WORKDIR /usr/src/app
+
+# Instalar dependencias de sistema para audio Discord (sin Playwright/Xvfb)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3 \
+    make \
+    g++ \
+    libasound2 \
+    alsa-utils \
+    pulseaudio \
+    pulseaudio-utils \
+    dbus \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar los archivos de dependencias
+COPY package*.json ./
+
+# Instalar dependencias (sin Playwright)
+RUN npm install --omit=dev
+
+# Copiar el resto del código
+COPY . .
+
+# Copiar y dar permisos de ejecución al script de inicio
+COPY entrypoint.pi.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Exponer el puerto del Dashboard
+EXPOSE 9445
+
+# Usar el entrypoint para arrancar PulseAudio antes del bot
+ENTRYPOINT ["/entrypoint.sh"]

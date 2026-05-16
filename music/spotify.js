@@ -1,4 +1,5 @@
-const axios = require('axios');
+const fetch = require('isomorphic-unfetch');
+const spotifyUrlInfo = require('spotify-url-info')(fetch);
 
 const SPOTIFY_URL_REGEX = /^https?:\/\/open\.spotify\.com\/(track|playlist|album)\/([a-zA-Z0-9]+)(\?.*)?$/i;
 const SPOTIFY_URI_REGEX = /^spotify:(track|playlist|album):([a-zA-Z0-9]+)$/i;
@@ -33,145 +34,46 @@ function buildTrackSearchQuery(track) {
   return `${artistText} ${track.name || ''}`.trim();
 }
 
-class SpotifyClient {
-  constructor({ clientId, clientSecret, market = 'US' } = {}) {
-    this.clientId = clientId;
-    this.clientSecret = clientSecret;
-    this.market = market;
-    this.cachedToken = null;
-    this.tokenExpiresAt = 0;
-  }
-
-  isConfigured() {
-    return Boolean(this.clientId && this.clientSecret);
-  }
-
-  async getAccessToken() {
-    if (!this.isConfigured()) {
-      throw new Error('Falta configurar SPOTIFY_CLIENT_ID y SPOTIFY_CLIENT_SECRET.');
-    }
-
-    if (this.cachedToken && Date.now() < this.tokenExpiresAt - 30_000) {
-      return this.cachedToken;
-    }
-
-    const payload = new URLSearchParams();
-    payload.append('grant_type', 'client_credentials');
-
-    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
-    const response = await axios.post('https://accounts.spotify.com/api/token', payload.toString(), {
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      timeout: 10_000
-    });
-
-    this.cachedToken = response.data.access_token;
-    const expiresIn = Number(response.data.expires_in || 3600);
-    this.tokenExpiresAt = Date.now() + (expiresIn * 1000);
-    return this.cachedToken;
-  }
-
-  async apiGet(endpoint, params = {}) {
-    const token = await this.getAccessToken();
-    const response = await axios.get(`https://api.spotify.com/v1${endpoint}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      params: { market: this.market, ...params },
-      timeout: 10_000
-    });
-    return response.data;
-  }
-
-  async getTrack(trackId) {
-    return this.apiGet(`/tracks/${encodeURIComponent(trackId)}`);
-  }
-
-  async getPlaylistTracks(playlistId) {
-    const tracks = [];
-    let offset = 0;
-    const limit = 100;
-
-    while (true) {
-      const data = await this.apiGet(`/playlists/${encodeURIComponent(playlistId)}/tracks`, { limit, offset });
-      const items = Array.isArray(data.items) ? data.items : [];
-      for (const item of items) {
-        const track = item?.track;
-        if (track && track.name) tracks.push(track);
-      }
-      if (!data.next || items.length === 0) break;
-      offset += items.length;
-    }
-
-    return tracks;
-  }
-
-  async getAlbumTracks(albumId) {
-    const tracks = [];
-    let offset = 0;
-    const limit = 50;
-
-    while (true) {
-      const data = await this.apiGet(`/albums/${encodeURIComponent(albumId)}/tracks`, { limit, offset });
-      const items = Array.isArray(data.items) ? data.items : [];
-      for (const track of items) {
-        if (track && track.name) tracks.push(track);
-      }
-      if (!data.next || items.length === 0) break;
-      offset += items.length;
-    }
-
-    return tracks;
-  }
-}
-
-let defaultSpotifyClient = null;
-
-function getSpotifyClient() {
-  if (!defaultSpotifyClient) {
-    defaultSpotifyClient = new SpotifyClient({
-      clientId: process.env.SPOTIFY_CLIENT_ID,
-      clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
-      market: process.env.SPOTIFY_MARKET || 'US'
-    });
-  }
-  return defaultSpotifyClient;
-}
-
-async function resolveSpotifyQueries(input, spotifyClient = getSpotifyClient()) {
+async function resolveSpotifyQueries(input, client = spotifyUrlInfo) {
+  const raw = String(input || '').trim();
   const parsed = parseSpotifyUrl(input);
   if (!parsed) {
-    throw new Error('URL de Spotify inválida. Usa track, playlist o album.');
+    throw new Error('URL de Spotify inv?lida. Usa track, playlist o album.');
   }
 
-  if (!spotifyClient || typeof spotifyClient.getTrack !== 'function') {
-    throw new Error('Cliente de Spotify inválido.');
-  }
+  try {
+    if (client && client !== spotifyUrlInfo) {
+      if (parsed.type === 'track' && typeof client.getTrack === 'function') {
+        const track = await client.getTrack(parsed.id);
+        const query = buildTrackSearchQuery(track);
+        return query ? [query] : [];
+      }
 
-  if (parsed.type === 'track') {
-    const track = await spotifyClient.getTrack(parsed.id);
-    const query = buildTrackSearchQuery(track);
-    return query ? [query] : [];
-  }
+      const collectionResolver = parsed.type === 'album'
+        ? client.getAlbumTracks
+        : client.getPlaylistTracks;
 
-  if (parsed.type === 'playlist') {
-    const tracks = await spotifyClient.getPlaylistTracks(parsed.id);
+      if (typeof collectionResolver === 'function') {
+        const tracks = await collectionResolver.call(client, parsed.id);
+        return (tracks || []).map(buildTrackSearchQuery).filter(Boolean);
+      }
+    }
+
+    const tracks = await spotifyUrlInfo.getTracks(raw);
+    if (!tracks || !tracks.length) {
+      throw new Error('No se encontraron canciones en este enlace de Spotify.');
+    }
+    
     return tracks.map(buildTrackSearchQuery).filter(Boolean);
+  } catch (err) {
+    console.error('[Spotify Scraper Error]', err.message);
+    throw new Error('No se pudo extraer la informaci?n de Spotify. Aseg?rate de que el enlace sea p?blico.');
   }
-
-  if (parsed.type === 'album') {
-    const tracks = await spotifyClient.getAlbumTracks(parsed.id);
-    return tracks.map(buildTrackSearchQuery).filter(Boolean);
-  }
-
-  return [];
 }
 
 module.exports = {
-  SpotifyClient,
   isSpotifyLink,
   parseSpotifyUrl,
   buildTrackSearchQuery,
-  resolveSpotifyQueries,
-  getSpotifyClient
+  resolveSpotifyQueries
 };

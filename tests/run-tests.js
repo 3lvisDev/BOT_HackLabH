@@ -1,85 +1,105 @@
 #!/usr/bin/env node
 /**
- * Simple Test Runner
- * Ejecuta los tests de exploración del bug y preservación
+ * Lightweight test runner for legacy Mocha-style tests.
+ * Keeps npm test dependency-free by providing describe/it globals.
  */
 
-const { spawn } = require('child_process');
 const path = require('path');
 
-console.log('\n╔════════════════════════════════════════════════════════════╗');
-console.log('║  Test Suite: Welcome/Goodbye Messages Bug Fix             ║');
-console.log('╚════════════════════════════════════════════════════════════╝\n');
+const tests = [];
+let beforeEachHook = null;
 
-async function runTest(testFile, description) {
+global.describe = (name, fn) => {
+  console.log(`\n# ${name}`);
+  fn();
+};
+
+global.beforeEach = (fn) => {
+  beforeEachHook = fn;
+};
+
+global.it = (name, fn) => {
+  tests.push({ name, fn, beforeEachHook });
+};
+
+global.test = global.it;
+global.test.skip = (name) => {
+  console.log(`- skipped: ${name}`);
+};
+
+global.expect = (value) => ({
+  toBe: (expected) => {
+    if (value !== expected) {
+      throw new Error(`Expected ${JSON.stringify(value)} to be ${JSON.stringify(expected)}`);
+    }
+  },
+  toBeTruthy: () => {
+    if (!value) throw new Error(`Expected ${JSON.stringify(value)} to be truthy`);
+  },
+  toContain: (expected) => {
+    if (!value || !value.includes(expected)) {
+      throw new Error(`Expected ${JSON.stringify(value)} to contain ${JSON.stringify(expected)}`);
+    }
+  }
+});
+
+function runMaybeAsync(fn) {
   return new Promise((resolve, reject) => {
-    console.log(`\n▶ Running: ${description}`);
-    console.log(`  File: ${testFile}\n`);
-    
-    const testProcess = spawn('node', [testFile], {
-      cwd: process.cwd(),
-      stdio: 'inherit'
-    });
+    try {
+      if (fn.length > 0) {
+        let doneCalled = false;
+        const timeout = setTimeout(() => {
+          if (!doneCalled) reject(new Error('Test timed out waiting for done()'));
+        }, 5000);
 
-    testProcess.on('close', (code) => {
-      if (code === 0) {
-        console.log(`\n✓ ${description} completed\n`);
-        resolve();
-      } else {
-        console.log(`\n✗ ${description} failed with code ${code}\n`);
-        reject(new Error(`Test failed: ${description}`));
+        fn((err) => {
+          doneCalled = true;
+          clearTimeout(timeout);
+          err ? reject(err) : resolve();
+        });
+        return;
       }
-    });
 
-    testProcess.on('error', (err) => {
-      console.error(`\n✗ Error running ${description}:`, err.message);
-      reject(err);
-    });
+      Promise.resolve(fn()).then(resolve, reject);
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
 async function main() {
-  const tests = [
-    {
-      file: path.join(__dirname, 'bugfix-welcome-goodbye.test.js'),
-      description: 'Bug Exploration Tests'
-    },
-    {
-      file: path.join(__dirname, 'preservation.test.js'),
-      description: 'Preservation Tests'
-    }
+  const files = [
+    'bugfix-welcome-goodbye.test.js',
+    'preservation.test.js',
+    'music-seed-learning.test.js',
+    'music-memory-client.test.js'
   ];
+
+  for (const file of files) {
+    require(path.join(__dirname, file));
+  }
 
   let passed = 0;
   let failed = 0;
 
-  for (const test of tests) {
+  for (const testCase of tests) {
     try {
-      await runTest(test.file, test.description);
+      if (testCase.beforeEachHook) await runMaybeAsync(testCase.beforeEachHook);
+      await runMaybeAsync(testCase.fn);
       passed++;
+      console.log(`? ${testCase.name}`);
     } catch (error) {
       failed++;
-      console.error(`Failed: ${test.description}`);
+      console.error(`? ${testCase.name}`);
+      console.error(`  ${error.stack || error.message}`);
     }
   }
 
-  console.log('\n╔════════════════════════════════════════════════════════════╗');
-  console.log('║  Test Results Summary                                      ║');
-  console.log('╚════════════════════════════════════════════════════════════╝');
-  console.log(`\n  ✓ Passed: ${passed}`);
-  console.log(`  ✗ Failed: ${failed}`);
-  console.log(`  Total:  ${passed + failed}\n`);
-
-  if (failed > 0) {
-    console.log('⚠️  Some tests failed. Review the output above.\n');
-    process.exit(1);
-  } else {
-    console.log('✅ All tests passed!\n');
-    process.exit(0);
-  }
+  console.log(`\nTest Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);
+  process.exit(failed ? 1 : 0);
 }
 
 main().catch((error) => {
-  console.error('\n❌ Test runner error:', error.message);
+  console.error('Test runner error:', error.stack || error.message);
   process.exit(1);
 });

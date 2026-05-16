@@ -6,13 +6,48 @@ const ssh = new NodeSSH();
 
 async function deploy() {
     try {
-        console.log('Connecting to Raspberry Pi (192.168.1.92:22)...');
-        await ssh.connect({
-            host: '192.168.1.92',
-            port: 22,
-            username: 'elvisds',
-            password: 'S3cUrItY@1420K'
-        });
+        const piPassword = process.env.PI_PASSWORD;
+        const sshKeys = [
+            'C:/Users/thega/.ssh/id_notebook_pi',
+            'C:/Users/thega/.ssh/id_rsa',
+            'C:/Users/thega/.ssh/id_apexstation',
+            'C:/Users/thega/.ssh/id_rsa_pleytv'
+        ];
+        
+        let connected = false;
+        for (const keyPath of sshKeys) {
+            if (fs.existsSync(keyPath)) {
+                try {
+                    console.log(`Trying SSH key: ${keyPath}...`);
+                    await ssh.connect({
+                        host: '192.168.1.92',
+                        port: 22,
+                        username: 'elvisds',
+                        privateKey: fs.readFileSync(keyPath, 'utf8')
+                    });
+                    connected = true;
+                    console.log(`✅ Connected using ${keyPath}`);
+                    break;
+                } catch (e) {
+                    console.log(`❌ Failed with ${keyPath}`);
+                }
+            }
+        }
+
+        if (!connected && piPassword) {
+            console.log('Trying with PI_PASSWORD...');
+            await ssh.connect({
+                host: '192.168.1.92',
+                port: 22,
+                username: 'elvisds',
+                password: piPassword
+            });
+            connected = true;
+        }
+
+        if (!connected) {
+            throw new Error('All authentication methods failed.');
+        }
         
         console.log('Connected! Creating destination directory...');
         const remoteDir = '/home/elvisds/BOT_HackLabH';
@@ -23,7 +58,7 @@ async function deploy() {
         const failed = [];
         const successful = [];
         
-        await ssh.putDirectory('C:/BOT_HackLabH', remoteDir, {
+        await ssh.putDirectory('./', remoteDir, {
           recursive: true,
           concurrency: 5, // Lower concurrency for Pi SD card written limits
           tick: function(localPath, remotePath, error) {
@@ -43,6 +78,8 @@ async function deploy() {
             if (baseName === '.gemini' || baseName === '.agents' || baseName === 'temp-skills') return false;
             // Skip Mac DS_Store if exists
             if (baseName === '.DS_Store') return false;
+            // Skip .env file to avoid overwriting production secrets (but allow templates like .env.release)
+            if (baseName === '.env') return false;
             
             return true;
           }
@@ -53,40 +90,31 @@ async function deploy() {
             console.log('Failed files:', failed.slice(0, 10)); // print some
         }
         
-        const password = 'S3cUrItY@1420K';
+        const password = piPassword;
 
-        console.log('Installing dependencies on Raspberry Pi...');
-        console.log(await ssh.execCommand('npm install', { cwd: remoteDir, stream: 'stdout' }));
+        console.log('Deploying via Docker Compose on Raspberry Pi...');
         
-        console.log('Ensuring Playwright cache directory and permissions...');
-        await ssh.execCommand(`echo "${password}" | sudo -S mkdir -p /home/elvisds/.cache/ms-playwright`);
-        await ssh.execCommand(`echo "${password}" | sudo -S chown -R elvisds:elvisds /home/elvisds/.cache`);
+        // Only copy the release template to .env if .env doesn't exist on the Pi
+        await ssh.execCommand('[ ! -f .env ] && cp .env.release .env || echo "Production .env already exists, skipping copy."', { cwd: remoteDir });
 
-        console.log('Installing Playwright Chromium...');
-        // Try to install the browser
-        let playwrightResult = await ssh.execCommand('npx playwright install chromium', { cwd: remoteDir });
-        console.log(playwrightResult.stdout);
+        console.log('Stopping existing containers...');
+        await ssh.execCommand('docker-compose -f docker-compose.release.yml down', { cwd: remoteDir });
+
+        console.log('Building and starting containers in detached mode...');
+        const composeResult = await ssh.execCommand('docker-compose -f docker-compose.release.yml up -d --build', { 
+            cwd: remoteDir,
+            stream: 'stdout' 
+        });
         
-        console.log('Installing system dependencies with sudo...');
-        // Use sudo -S to provide password from stdin
-        const sudoPlaywrightCommand = `echo "${password}" | sudo -S npx playwright install-deps chromium`;
-        const sudoResult = await ssh.execCommand(sudoPlaywrightCommand, { cwd: remoteDir });
-        console.log(sudoResult.stdout);
-        if (sudoResult.stderr) console.log('Sudo status/output:', sudoResult.stderr);
+        console.log(composeResult.stdout);
+        if (composeResult.stderr) {
+            console.log('Compose Error/Status:', composeResult.stderr);
+        }
 
-        console.log('Ensuring process supervisor (pm2) is installed...');
-        await ssh.execCommand(`echo "${password}" | sudo -S npm install -g pm2`, { cwd: remoteDir });
+        console.log('Cleaning up unused Docker images...');
+        await ssh.execCommand('docker image prune -f', { cwd: remoteDir });
 
-        console.log('Restarting Bot on port 9444...');
-        // Try to restart if exists, start if not
-        const restartResult = await ssh.execCommand('PORT=9444 pm2 restart HackLabBot || PORT=9444 pm2 start index.js --name "HackLabBot"', { cwd: remoteDir });
-        console.log(restartResult.stdout);
-        if (restartResult.stderr) console.log(restartResult.stderr);
-        
-        console.log('Saving PM2 to startup...');
-        await ssh.execCommand('pm2 save', { cwd: remoteDir });
-
-        console.log('DEPOLOYMENT FINISHED SUCCESSFULLY!');
+        console.log('DEPOLOYMENT FINISHED SUCCESSFULLY VIA DOCKER!');
         ssh.dispose();
     } catch (err) {
         console.error('DEPLOYMENT FAILED:', err);
