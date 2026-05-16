@@ -17,7 +17,7 @@ if (!globalThis.File) {
     };
 }
 
-const { Client, GatewayIntentBits, Partials, ActivityType, PermissionsBitField, ChannelType } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, ActivityType, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const db = require('./db');
 const { getGuildConfig, setGuildConfig, setGuildLanguage } = db;
 const { validateEnvironmentVariables } = require('./env-validator');
@@ -232,10 +232,30 @@ async function handleMusicSlashCommand(interaction) {
     }
 
     if (command === 'help') {
-        await interaction.reply({
-            ephemeral: true,
-            content: t(locale, 'help_music')
-        });
+        const heroGifName = 'hacklab_music_bot_animado.gif';
+        const heroGifPath = path.join(__dirname, 'assets', 'branding', heroGifName);
+        const heroGifFile = new AttachmentBuilder(heroGifPath, { name: heroGifName });
+        const thumbnail = interaction.client.user?.displayAvatarURL?.({ size: 256 }) || undefined;
+        const embed = {
+            color: 0x8b5cf6,
+            title: t(locale, 'help_title'),
+            description: t(locale, 'help_description'),
+            image: { url: `attachment://${heroGifName}` },
+            fields: [
+                { name: t(locale, 'help_music_title'), value: t(locale, 'help_music_value') },
+                { name: t(locale, 'help_personal_title'), value: t(locale, 'help_personal_value') },
+                { name: t(locale, 'help_tickets_title'), value: t(locale, 'help_tickets_value') },
+                { name: t(locale, 'help_emoji_title'), value: t(locale, 'help_emoji_value') },
+                { name: t(locale, 'help_config_title'), value: t(locale, 'help_config_value') },
+                { name: t(locale, 'help_invite_title'), value: t(locale, 'help_invite_value') },
+                { name: t(locale, 'help_dashboard_title'), value: t(locale, 'help_dashboard_value') }
+            ],
+            footer: { text: t(locale, 'help_footer') },
+            timestamp: new Date().toISOString()
+        };
+        if (thumbnail) embed.thumbnail = { url: thumbnail };
+        await interaction.reply({ ephemeral: true, embeds: [embed], files: [heroGifFile] });
+        return;
     }
 }
 

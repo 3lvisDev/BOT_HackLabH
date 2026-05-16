@@ -8,7 +8,11 @@
   },
   "scripts": {
     "start": "node index.js",
+    "lint": "node scripts/quality/lint-syntax.js",
+    "typecheck": "node scripts/quality/typecheck-i18n.js",
     "test": "node tests/run-tests.js",
+    "test:integration": "node tests/integration/music-memory.integration.js",
+    "build": "node scripts/quality/build-check.js",
     "test:bug": "node tests/bugfix-welcome-goodbye.test.js",
     "test:preservation": "node tests/preservation.test.js",
     "deploy:commands": "node scripts/deploy-commands.js",
