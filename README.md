@@ -1,66 +1,88 @@
-# HackLabH Bot | Bot de Música para Discord
+# HackLabH Bot | El Bot de Música para Discord que tu Comunidad Sí Usa
 
 <div align="center">
-  <img src="assets/branding/hacklab_music_bot_animado.gif" alt="HackLabH Bot para Discord" width="220" />
+  <img src="assets/branding/hacklab_music_bot_animado.gif" alt="HackLabH Bot - bot de música para Discord" width="240" />
 
-  ## Música, comunidad y experiencia premium en tu servidor
+  ## Más música, más actividad, mejor ambiente en tu servidor
 
-  **HackLabH Bot** es un bot de Discord diseñado para comunidades que quieren sonido estable, comandos simples y una experiencia moderna.
+  **HackLabH Bot** transforma tu Discord con una experiencia musical simple, rápida y pensada para comunidad.
 
-  [?? Invitar ahora](https://panel.hacklabh.xyz/invite) • [?? Ver comandos](./COMMANDS.md) • [?? Novedades](./UPDATES.md)
+  [?? Invitar ahora](https://panel.hacklabh.xyz/invite) • [?? Ver comandos](./COMMANDS.md) • [?? Ver novedades](./UPDATES.md)
 </div>
 
 ---
 
-## ¿Por qué elegir HackLabH Bot?
+## ¿Qué ganas al usar HackLabH Bot?
 
-- ?? **Música sin complicaciones** para tu comunidad
-- ? **Comandos rápidos** y fáciles de usar
-- ?? **Integración simple** en servidores nuevos o activos
-- ??? **Transparencia pública** en seguridad y actualizaciones
-- ?? **Enfoque real en la experiencia del usuario**
+- ?? **Ambiente activo 24/7** con música para tu comunidad
+- ? **Comandos simples** para usar desde el primer minuto
+- ?? **Experiencia pensada para usuarios reales**, no para técnicos
+- ?? **Mejoras continuas** con comunicación pública de novedades
+- ??? **Confianza y transparencia** en seguridad y estado del servicio
 
-## Ideal para
+## Hecho para comunidades que quieren crecer
 
-- Comunidades gaming
-- Servidores sociales
+Perfecto para:
+- Servidores gaming
+- Comunidades sociales
 - Grupos de creadores
-- Proyectos que buscan un bot musical confiable para Discord
+- Proyectos que quieren retención y más interacción en voz
 
-## Comandos populares
+## Comandos favoritos de la comunidad
 
-- `/play` — Reproduce música
-- `/skip` — Salta canción
-- `/queue` — Muestra cola
-- `/pause` y `/resume` — Control rápido
-- `/invite` — Enlace oficial del bot
+- `/play` — Pon música al instante
+- `/skip` — Salta rápido al siguiente tema
+- `/queue` — Mira lo que viene
+- `/pause` y `/resume` — Control total
+- `/invite` — Comparte el bot en más servidores
 
-?? Lista completa en [COMMANDS.md](./COMMANDS.md)
+?? Ver todos en [COMMANDS.md](./COMMANDS.md)
 
-## Seguridad y confianza
+## Lo que dice la comunidad (referencial)
 
-HackLabH Bot mantiene una cara pública enfocada en:
-- Actualizaciones visibles
-- Estado público del servicio
-- Política de seguridad clara
-- Operación responsable
+> “Lo instalamos en minutos y la actividad en voz subió desde el primer día.”
 
-Revisa:
-- [SECURITY.md](./SECURITY.md)
+> “Fácil de usar, sin enredos, y siempre sabemos qué novedades trae.”
+
+> “Nos gustó que tenga cara pública clara y enfoque responsable.”
+
+## Seguridad, legalidad y transparencia
+
+HackLabH Bot mantiene una presencia pública orientada a confianza:
+- Estado del servicio visible
+- Actualizaciones comunicadas
+- Política de seguridad pública
+- Enfoque de operación legal y responsable
+
+Revisa aquí:
 - [STATUS.md](./STATUS.md)
+- [SECURITY.md](./SECURITY.md)
 - [CHANGELOG.md](./CHANGELOG.md)
 
-## Invita HackLabH Bot a tu servidor
+## Preguntas frecuentes
 
-Si buscas un **bot de música para Discord** con enfoque en comunidad, rendimiento y comunicación pública clara:
+### ¿Es fácil invitarlo?
+Sí. Solo usa el enlace oficial y autorízalo en tu servidor.
+
+### ¿Necesito conocimientos técnicos?
+No. Está pensado para uso directo por admins y moderadores.
+
+### ¿Dónde veo cambios nuevos?
+En [UPDATES.md](./UPDATES.md) y en los Releases públicos.
+
+---
+
+## ?? Invita HackLabH Bot ahora
+
+Si quieres un **bot de música para Discord** que mejore el ambiente y la participación:
 
 ### ? [Invitar HackLabH Bot](https://panel.hacklabh.xyz/invite)
 
 ---
 
 ### Recursos públicos
-- ?? Invitación: [INVITE.md](./INVITE.md)
-- ?? Comandos: [COMMANDS.md](./COMMANDS.md)
-- ?? Novedades: [UPDATES.md](./UPDATES.md)
-- ?? Seguridad: [SECURITY.md](./SECURITY.md)
-- ?? Licencia: [LICENSE](./LICENSE)
+- Invitación: [INVITE.md](./INVITE.md)
+- Comandos: [COMMANDS.md](./COMMANDS.md)
+- Novedades: [UPDATES.md](./UPDATES.md)
+- Seguridad: [SECURITY.md](./SECURITY.md)
+- Licencia: [LICENSE](./LICENSE)
