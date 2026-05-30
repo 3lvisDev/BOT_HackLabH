@@ -1,14 +1,17 @@
 # Invita HackLabH Bot a tu Discord
 
-¿Quieres activar HackLabH Bot en tu comunidad?
+¿Quieres mejorar la música y la energía de tu servidor?
 
-## Enlace oficial
-?? https://panel.hacklabh.xyz/invite
+## ?? Enlace oficial de invitación
+### https://panel.hacklabh.xyz/invite
 
-## Recomendación
-Usa siempre este enlace oficial para garantizar una instalación segura y actualizada.
+## ¿Qué te ofrece HackLabH Bot?
+- Experiencia musical para tu comunidad
+- Comandos simples y rápidos
+- Mejoras continuas con novedades públicas
+- Comunicación transparente para usuarios
 
-## ¿Qué obtienes?
-- Comandos de música
-- Soporte de funcionalidades comunitarias
-- Actualizaciones públicas y mejoras continuas
+## Recomendación importante
+Usa siempre el enlace oficial para una integración segura y actualizada.
+
+?? **Invitar ahora:** https://panel.hacklabh.xyz/invite

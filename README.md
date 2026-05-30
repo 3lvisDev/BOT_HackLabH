@@ -1,43 +1,66 @@
-# HackLabH Bot — Portal Público
+# HackLabH Bot | Bot de Música para Discord
 
 <div align="center">
-  <img src="assets/branding/hacklab_music_bot_animado.gif" alt="HackLabH Bot" width="220" />
-  <h3>Un bot de música y comunidad para Discord, con enfoque en transparencia, seguridad y cumplimiento.</h3>
+  <img src="assets/branding/hacklab_music_bot_animado.gif" alt="HackLabH Bot para Discord" width="220" />
+
+  ## Música, comunidad y experiencia premium en tu servidor
+
+  **HackLabH Bot** es un bot de Discord diseñado para comunidades que quieren sonido estable, comandos simples y una experiencia moderna.
+
+  [?? Invitar ahora](https://panel.hacklabh.xyz/invite) • [?? Ver comandos](./COMMANDS.md) • [?? Novedades](./UPDATES.md)
 </div>
-
-## ¿Qué encontrarás aquí?
-Este repositorio es la **cara pública oficial** de HackLabH Bot.
-
-Aquí publicamos únicamente:
-- Releases y novedades oficiales
-- Guías para usuarios
-- Comandos disponibles
-- Auditorías y seguridad
-- Estado público del servicio
-- Noticias e integraciones visibles
-
-## Lo que NO publicamos
-Para proteger la seguridad del ecosistema:
-- Core privado del bot
-- Secretos, credenciales o infraestructura sensible
-- Detalles técnicos internos que puedan comprometer seguridad
-
-## Enlaces rápidos
-- ?? **Invitar el bot**: https://panel.hacklabh.xyz/invite
-- ??? **Comandos**: [COMMANDS.md](./COMMANDS.md)
-- ?? **Novedades**: [UPDATES.md](./UPDATES.md)
-- ?? **Estado público**: [STATUS.md](./STATUS.md)
-- ?? **Seguridad**: [SECURITY.md](./SECURITY.md)
-- ?? **Licencia**: [LICENSE](./LICENSE)
-
-## Compromiso público
-HackLabH Bot mantiene un compromiso activo de:
-- Operación legal y responsable
-- Visibilidad pública de cambios relevantes
-- Comunicación clara de mejoras y controles
-- Mejora continua en calidad, seguridad y experiencia
 
 ---
 
-¿Quieres usar HackLabH Bot en tu servidor?
-?? **Invítalo aquí:** https://panel.hacklabh.xyz/invite
+## ¿Por qué elegir HackLabH Bot?
+
+- ?? **Música sin complicaciones** para tu comunidad
+- ? **Comandos rápidos** y fáciles de usar
+- ?? **Integración simple** en servidores nuevos o activos
+- ??? **Transparencia pública** en seguridad y actualizaciones
+- ?? **Enfoque real en la experiencia del usuario**
+
+## Ideal para
+
+- Comunidades gaming
+- Servidores sociales
+- Grupos de creadores
+- Proyectos que buscan un bot musical confiable para Discord
+
+## Comandos populares
+
+- `/play` — Reproduce música
+- `/skip` — Salta canción
+- `/queue` — Muestra cola
+- `/pause` y `/resume` — Control rápido
+- `/invite` — Enlace oficial del bot
+
+?? Lista completa en [COMMANDS.md](./COMMANDS.md)
+
+## Seguridad y confianza
+
+HackLabH Bot mantiene una cara pública enfocada en:
+- Actualizaciones visibles
+- Estado público del servicio
+- Política de seguridad clara
+- Operación responsable
+
+Revisa:
+- [SECURITY.md](./SECURITY.md)
+- [STATUS.md](./STATUS.md)
+- [CHANGELOG.md](./CHANGELOG.md)
+
+## Invita HackLabH Bot a tu servidor
+
+Si buscas un **bot de música para Discord** con enfoque en comunidad, rendimiento y comunicación pública clara:
+
+### ? [Invitar HackLabH Bot](https://panel.hacklabh.xyz/invite)
+
+---
+
+### Recursos públicos
+- ?? Invitación: [INVITE.md](./INVITE.md)
+- ?? Comandos: [COMMANDS.md](./COMMANDS.md)
+- ?? Novedades: [UPDATES.md](./UPDATES.md)
+- ?? Seguridad: [SECURITY.md](./SECURITY.md)
+- ?? Licencia: [LICENSE](./LICENSE)

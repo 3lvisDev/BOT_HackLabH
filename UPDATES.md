@@ -1,13 +1,13 @@
-# Novedades públicas (UPDATES)
+# Novedades públicas (Product Updates)
 
-## 2026-05-30
-- Reorganización del portal público con enfoque comercial y transparencia.
-- Nueva documentación para usuarios: comandos, estado y guía de invitación.
-- Mejora visual del README con identidad del bot.
+## 2026-05-30 — Nueva imagen pública orientada a comunidad
+- Lanzamos una presentación más comercial y clara para usuarios nuevos.
+- Mejoramos la experiencia de descubrimiento: comandos, estado y seguridad en acceso rápido.
+- Reforzamos el enfoque de transparencia pública y comunicación continua.
 
-## 2026-05-16
-- Actualizaciones generales de documentación pública.
+## 2026-05-16 — Actualizaciones de documentación pública
+- Ajustes generales en contenidos públicos para mayor claridad.
 
 ---
 
-Para cambios por versión, revisa también el historial de releases del repositorio.
+Para historial por versión, revisa también los Releases del repositorio.
